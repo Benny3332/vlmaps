@@ -1,2 +1,3 @@
-habitat_scene_dir: "/Users/huang/hcg/projects/vln/data/mp3d"
-vlmaps_data_dir: "/Users/huang/hcg/projects/vln/data/vlmaps_dataset"
+habitat_scene_dir: "/home/benny/conda/MattHabitat/v1/tasks/mp3d"
+vlmaps_data_dir: "/media/benny/bennyMove/data/collect_tran_vlmaps_data"
+#vlmaps_data_dir: "/home/benny/conda/MattHabitat/vlmaps_dataset"

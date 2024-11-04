@@ -190,11 +190,13 @@ class VLMap(Map):
             self.clip_feat_dim,
             vis=vis,
         )
+        # 对一个二值地图（binary_map）进行膨胀处理，同时可选地应用高斯滤波
         self.obstacles_new_cropped = Map._dilate_map(
             self.obstacles_new_cropped == 0,
             self.map_config.dilate_iter,
             self.map_config.gaussian_sigma,
         )
+        # 所有原来等于0的元素对应的位置会是True，而不等于0的元素对应的位置会是False
         self.obstacles_new_cropped = self.obstacles_new_cropped == 0
 
     # def load_categories(self, categories: List[str] = None):

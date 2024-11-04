@@ -75,48 +75,68 @@ def point_in_contours(obs_map, contours_list, point):
 
 
 def build_visgraph_with_obs_map(obs_map, use_internal_contour=False, internal_point=None, vis=False):
+    # 将障碍物地图转换为可视化图像
     obs_map_vis = (obs_map[:, :, None] * 255).astype(np.uint8)
     obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
+    # 如果开启可视化，则显示障碍物地图
     if vis:
         cv2.imshow("obs", obs_map_vis)
         cv2.waitKey()
 
+    # 获取障碍物地图中的轮廓、中心点、边界框和层次结构
     contours_list, centers_list, bbox_list, hierarchy = get_segment_islands_pos(
         obs_map, 0, detect_internal_contours=use_internal_contour
     )
-
+    # TODO:
+    # 如果需要检测内部轮廓
     if use_internal_contour:
+        # 查找内部点在哪些轮廓内
         ids = point_in_contours(obs_map, contours_list, internal_point)
+        # 断言内部点必须在两个轮廓内
         assert len(ids) == 2, f"The internal point is not in 2 contours, but {len(ids)}"
+        # 找到两个轮廓之间最近的点
         point_a, point_b = find_closest_points_between_two_contours(
             obs_map, contours_list[ids[0]], contours_list[ids[1]]
         )
+        # 在障碍物地图上绘制连线
         obs_map = cv2.line((obs_map * 255).astype(np.uint8), (point_a[1], point_a[0]), (point_b[1], point_b[0]), 255, 5)
+        # 更新障碍物地图
         obs_map = obs_map == 255
+        # 重新获取轮廓、中心点、边界框和层次结构
         contours_list, centers_list, bbox_list, hierarchy = get_segment_islands_pos(
             obs_map, 0, detect_internal_contours=False
         )
 
     poly_list = []
 
+    # 遍历所有轮廓
     for contour in contours_list:
+        # 如果开启可视化，则绘制轮廓
         if vis:
             contour_cv2 = contour[:, [1, 0]]
             cv2.drawContours(obs_map_vis, [contour_cv2], 0, (0, 255, 0), 3)
             cv2.imshow("obs", obs_map_vis)
+        # 提取轮廓点
         contour_pos = []
         for [row, col] in contour:
             contour_pos.append(vg.Point(row, col))
+        # 将轮廓点添加到多边形列表中
         poly_list.append(contour_pos)
+        # 提取轮廓点的x和z坐标
         xlist = [x.x for x in contour_pos]
         zlist = [x.y for x in contour_pos]
+        # 如果开启可视化，则绘制轮廓点的x和z坐标曲线
         if vis:
             # plt.plot(xlist, zlist)
 
             cv2.waitKey()
+    # 创建可视化图
     g = vg.VisGraph()
+    # 构建可视化图
     g.build(poly_list, workers=4)
+    # 返回可视化图
     return g
+
 
 
 def get_nearby_position(goal: Tuple[float, float], G: vg.VisGraph) -> Tuple[float, float]:

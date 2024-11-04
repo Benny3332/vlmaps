@@ -23,6 +23,11 @@ def cvt_pose_vec2tf(pos_quat_vec: np.ndarray) -> np.ndarray:
     pose_tf[:3, 3] = pos_quat_vec[:3].flatten()
     rot = R.from_quat(pos_quat_vec[3:].flatten())
     pose_tf[:3, :3] = rot.as_matrix()
+    # rot_change = R.from_euler('xyz', [-90, 0, -90], degrees=True)
+    # rot_change = R.from_euler('xyz', [0, 90, 90], degrees=True)
+    # rot = R.from_quat(pos_quat_vec[3:].flatten())
+    # rot = rot * rot_change
+    # pose_tf[:3, :3] = rot.as_matrix()
     return pose_tf
 
 
@@ -228,27 +233,42 @@ def depth2pc(depth, fov=90, intr_mat=None, min_depth=0.1, max_depth=10):
     Return 3xN array and the mask of valid points in [min_depth, max_depth]
     """
 
+    # 获取深度图的高度和宽度
     h, w = depth.shape
 
+    # 初始化相机内参矩阵
     cam_mat = intr_mat
     if intr_mat is None:
+        # 如果未提供相机内参矩阵，则根据图像尺寸和视野角计算
         cam_mat = get_sim_cam_mat_with_fov(h, w, fov)
-    # cam_mat[:2, 2] = 0
+    # cam_mat[:2, 2] = 0  # 这行代码被注释掉了，可能是不需要或者为了调试
+    # 计算相机内参矩阵的逆矩阵
     cam_mat_inv = np.linalg.inv(cam_mat)
 
+    # 生成网格的x和y坐标
     y, x = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+    # 将x坐标调整为表示像素中心的位置
     x = x.reshape((1, -1))[:, :] + 0.5
+    # 将y坐标调整为表示像素中心的位置
     y = y.reshape((1, -1))[:, :] + 0.5
+    # 将深度值重塑为一维数组
     z = depth.reshape((1, -1))[:, :]
 
+    # 将x, y坐标和1（表示齐次坐标）堆叠成二维点坐标矩阵p_2d
     p_2d = np.vstack([x, y, np.ones_like(x)])
+    # 使用相机内参矩阵的逆矩阵将二维点坐标转换为三维点坐标
     pc = cam_mat_inv @ p_2d
+    # 将三维点坐标的z分量与对应的深度值相乘，得到最终的三维点云坐标
     pc = pc * z
+    # 生成一个布尔数组，表示哪些点的z分量大于最小深度值
     mask = pc[2, :] > min_depth
 
+    # 使用逻辑与操作，进一步筛选出在最小和最大深度值之间的点
     mask = np.logical_and(mask, pc[2, :] < max_depth)
-    # pc = pc[:, mask]
+    # pc = pc[:, mask]  # 这行代码被注释掉了，可能是不需要过滤点云或者为了调试
+    # 返回三维点云坐标和掩码
     return pc, mask
+
 
 
 def get_new_pallete(num_cls):

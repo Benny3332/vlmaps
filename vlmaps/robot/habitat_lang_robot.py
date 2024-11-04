@@ -42,10 +42,11 @@ class HabitatLanguageRobot(LangRobot):
         super().__init__(config)
 
         self.test_scene_dir = self.config["data_paths"]["habitat_scene_dir"]
-        data_dir = Path(self.config["data_paths"]["vlmaps_data_dir"]) / "vlmaps_dataset"
+        data_dir = Path(self.config["data_paths"]["vlmaps_data_dir"])
         self.vlmaps_data_save_dirs = [
             data_dir / x for x in sorted(os.listdir(data_dir)) if x != ".DS_Store"
-        ]  # ignore artifact generated in MacOS
+        ]
+        # ignore artifact generated in MacOS
         self.map_type = self.config["params"]["map_type"]
         self.camera_height = self.config["params"]["camera_height"]
         self.gs = self.config["params"]["gs"]
@@ -76,10 +77,12 @@ class HabitatLanguageRobot(LangRobot):
         self._setup_sim(self.scene_name)
 
         self.setup_map(vlmaps_data_dir)
-
+        # np.array<bool>
         cropped_obst_map = self.map.get_obstacle_cropped()
         if self.config.map_config.potential_obstacle_names and self.config.map_config.obstacle_names:
             print("come here")
+            # 这里根据get_dynamic_obstacles_map_3d() vlmaps.yaml obstacle_names障碍物列表生成new obstacles_cropped
+            # Map._dilate_map() 对一个二值地图(obstacles_new_cropped, binary_map）进行膨胀处理，同时可选地应用高斯滤波
             self.map.customize_obstacle_map(
                 self.config.map_config.potential_obstacle_names,
                 self.config.map_config.obstacle_names,
@@ -110,24 +113,29 @@ class HabitatLanguageRobot(LangRobot):
         """
         Setup Habitat simulator, load habitat scene and relevant mesh data
         """
+        # 如果sim实例已经存在，则先关闭它
         if self.sim is not None:
             self.sim.close()
+        # 构建测试场景的完整路径
         self.test_scene = os.path.join(self.test_scene_dir, scene_name, scene_name + ".glb")
+        # 设置sim的配置
         self.sim_setting = {
             "scene": self.test_scene,
             **self.config["params"]["sim_setting"],
         }
-
+        # 根据sim_setting生成配置对象
         cfg = make_cfg(self.sim_setting)
-
-        # create a simulator instance
-        if self.sim is None or scene_name == self.last_scene_name:
+        # 创建sim实例
+        # 如果sim实例不存在，或者当前场景名称与上次不同，则创建新的sim实例
+        if self.sim is None or scene_name != self.last_scene_name:
             self.sim = habitat_sim.Simulator(cfg)
+            # 初始化agent
             agent = self.sim.initialize_agent(self.sim_setting["default_agent"])
         else:
+            # 如果sim实例已存在且场景名称未变，则重新配置sim
             self.sim.reconfigure(cfg)
+        # 更新上次场景名称
         self.last_scene_name = scene_name
-
         # TODO: add in document to enable this features
         # load agent mesh for visualization
         # if self.agent_model_dir:

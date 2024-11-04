@@ -56,31 +56,42 @@ class VLMapBuilder:
         """
         build the 3D map centering at the first base frame
         """
+        # 访问配置信息
         # access config info
         camera_height = self.map_config.pose_info.camera_height
         cs = self.map_config.cell_size
         gs = self.map_config.grid_size
         depth_sample_rate = self.map_config.depth_sample_rate
 
+        # 加载基本姿态数据
         self.base_poses = np.loadtxt(self.pose_path)
+
+        # 根据旋转类型设置初始基本变换
         if self.rot_type == "quat":
             self.init_base_tf = cvt_pose_vec2tf(self.base_poses[0])
         elif self.rot_type == "mat":
             self.init_base_tf = self.base_poses[0].reshape((4, 4))
         else:
             raise ValueError("Invalid rotation type")
+
+        # 应用基本变换并计算逆变换
         self.init_base_tf = self.base_transform @ self.init_base_tf @ np.linalg.inv(self.base_transform)
         self.inv_init_base_tf = np.linalg.inv(self.init_base_tf)
+
+        # 计算初始相机变换和逆变换
         self.init_cam_tf = self.init_base_tf @ self.base2cam_tf
         self.inv_init_cam_tf = np.linalg.inv(self.init_cam_tf)
 
+        # 设置地图保存目录
         self.map_save_dir = self.data_dir / "vlmap"
         os.makedirs(self.map_save_dir, exist_ok=True)
         self.map_save_path = self.map_save_dir / "vlmaps.h5df"
 
+        # 初始化lseg模型
         # init lseg model
         lseg_model, lseg_transform, crop_size, base_size, norm_mean, norm_std = self._init_lseg()
 
+        # 初始化地图
         # init the map
         (
             vh,
@@ -93,13 +104,18 @@ class VLMapBuilder:
             max_id,
         ) = self._init_map(camera_height, cs, gs, self.map_save_path)
 
+        # 加载相机校准矩阵
         # load camera calib matrix in config
         calib_mat = np.array(self.map_config.cam_calib_mat).reshape((3, 3))
+
+        # 初始化空白地图和高度图
         cv_map = np.zeros((gs, gs, 3), dtype=np.uint8)
         height_map = -100 * np.ones((gs, gs), dtype=np.float32)
 
+        # 设置进度条
         pbar = tqdm(zip(self.rgb_paths, self.depth_paths, self.base_poses), total=len(self.rgb_paths))
         for frame_i, (rgb_path, depth_path, base_posevec) in enumerate(pbar):
+            # 加载数据
             # load data
             if self.rot_type == "quat":
                 habitat_base_pose = cvt_pose_vec2tf(base_posevec)
@@ -107,84 +123,105 @@ class VLMapBuilder:
                 habitat_base_pose = base_posevec.reshape((4, 4))
             else:
                 raise ValueError("Invalid rotation type")
+
             base_pose = self.base_transform @ habitat_base_pose @ np.linalg.inv(self.base_transform)
             tf = self.inv_init_base_tf @ base_pose
 
-            # theta = np.arctan2(tf[1, 0], tf[0, 0])
-            # theta_deg = np.rad2deg(theta)
-            # row, col, _ = base_pos2grid_id_3d(gs, cs, tf[0, 3], tf[1, 3], tf[2, 3])
-            # trow, tcol, _ = base_pos2grid_id_3d(gs, cs, tf[0, 3] + tf[0, 0], tf[1, 3] + tf[1, 0], tf[2, 3])
-
-            # cv2.circle(topdown, (col, row), 3, (0, 0, 255), -1)
-            # cv2.circle(topdown, (tcol, trow), 3, (0, 255, 0), -1)
-
+            # 读取RGB图像
             bgr = cv2.imread(str(rgb_path))
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+            # 加载深度数据
             depth = load_depth_npy(depth_path)
 
+            # 获取与像素对齐的LSeg特征
             # # get pixel-aligned LSeg features
             pix_feats = get_lseg_feat(
                 lseg_model, rgb, ["example"], lseg_transform, self.device, crop_size, base_size, norm_mean, norm_std
             )
             pix_feats_intr = get_sim_cam_mat(pix_feats.shape[2], pix_feats.shape[3])
 
+            # 反投影深度点云
             # backproject depth point cloud
             pc = self._backproject_depth(depth, calib_mat, depth_sample_rate, min_depth=0.1, max_depth=6)
 
+            # 将点云转换到全局坐标系（初始基准坐标系）
             # transform the point cloud to global frame (init base frame)
             # pc_transform = self.inv_init_base_tf @ self.base_transform @ habitat_base_pose @ self.base2cam_tf
             pc_transform = tf @ self.base_transform @ self.base2cam_tf
             pc_global = transform_pc(pc, pc_transform)  # (3, N)
 
             for i, (p, p_local) in enumerate(zip(pc_global.T, pc.T)):
+                # 计算点在网格中的行列号和高度
                 row, col, height = base_pos2grid_id_3d(gs, cs, p[0], p[1], p[2])
+                # 如果点超出网格范围，则跳过
                 if self._out_of_range(row, col, height, gs, vh):
                     continue
 
+                # 将点投影到图像坐标系和像素对齐的特征坐标系
                 px, py, pz = project_point(calib_mat, p_local)
                 rgb_v = rgb[py, px, :]
                 px, py, pz = project_point(pix_feats_intr, p_local)
 
+                # 如果该位置的高度比之前记录的高，则更新高度和颜色
                 if height > height_map[row, col]:
                     height_map[row, col] = height
                     cv_map[row, col, :] = rgb_v
 
+                # 如果当前特征数量超过预留空间，则扩大grid_feat, grid_pos, weight, grid_rgb的容量
                 # when the max_id exceeds the reserved size,
                 # double the grid_feat, grid_pos, weight, grid_rgb lengths
                 if max_id >= grid_feat.shape[0]:
                     self._reserve_map_space(grid_feat, grid_pos, weight, grid_rgb)
 
+                # 根据ConceptFusion论文中的方法，根据距离进行权重分配
                 # apply the distance weighting according to
                 # ConceptFusion https://arxiv.org/pdf/2302.07241.pdf Sec. 4.1, Feature fusion
                 radial_dist_sq = np.sum(np.square(p_local))
                 sigma_sq = 0.6
                 alpha = np.exp(-radial_dist_sq / (2 * sigma_sq))
 
+                # 更新地图特征
                 # update map features
                 if not (px < 0 or py < 0 or px >= pix_feats.shape[3] or py >= pix_feats.shape[2]):
+                    # 获取当前像素的特征
                     feat = pix_feats[0, :, py, px]
+                    # 获取当前位置的占用ID
                     occupied_id = occupied_ids[row, col, height]
                     if occupied_id == -1:
+                        # 如果没有占用，则添加新的特征
+                        # 设置占用ID为当前最大ID
                         occupied_ids[row, col, height] = max_id
+                        # 更新特征为当前特征乘以alpha
                         grid_feat[max_id] = feat.flatten() * alpha
+                        # 更新颜色为当前颜色
                         grid_rgb[max_id] = rgb_v
+                        # 更新权重
                         weight[max_id] += alpha
+                        # 更新位置信息
                         grid_pos[max_id] = [row, col, height]
+                        # 最大ID加1
                         max_id += 1
                     else:
+                        # 如果已经占用，则更新特征
                         grid_feat[occupied_id] = (
                             grid_feat[occupied_id] * weight[occupied_id] + feat.flatten() * alpha
                         ) / (weight[occupied_id] + alpha)
+                        # 更新颜色
                         grid_rgb[occupied_id] = (grid_rgb[occupied_id] * weight[occupied_id] + rgb_v * alpha) / (
-                            weight[occupied_id] + alpha
+                                weight[occupied_id] + alpha
                         )
+                        # 更新权重
                         weight[occupied_id] += alpha
 
+                # 将当前帧的迭代次数添加到已映射集合中
             mapped_iter_set.add(frame_i)
             if frame_i % 100 == 99:
+                # 每处理100帧，临时保存特征，并输出提示信息
                 print(f"Temporarily saving {max_id} features at iter {frame_i}...")
                 self._save_3d_map(grid_feat, grid_pos, weight, grid_rgb, occupied_ids, mapped_iter_set, max_id)
 
+        # 处理完所有帧后，保存最终的3D地图
         self._save_3d_map(grid_feat, grid_pos, weight, grid_rgb, occupied_ids, mapped_iter_set, max_id)
 
     def create_camera_map(self):

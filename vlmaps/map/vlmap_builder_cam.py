@@ -93,16 +93,28 @@ class VLMapBuilderCam:
         )
         global_pcd = o3d.geometry.PointCloud()
         for frame_i, (rgb_path, depth_path, camera_pose_tf) in enumerate(pbar):
+            # 检查当前帧是否需要跳过
+            if frame_i < 100:
+                continue
             if frame_i % self.map_config.skip_frame != 0:
                 continue
+            # 读取RGB图像文件
             bgr = cv2.imread(str(rgb_path))
+            # 将BGR图像转换为RGB图像
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            # 加载深度图数据
             depth = load_depth_npy(depth_path.as_posix())
+            # 将深度图反投影到三维空间，生成点云
             pc = self._backproject_depth(depth, calib_mat, depth_sample_rate, min_depth=0.1, max_depth=10)
-            transform_tf = camera_pose_tf  # @ self.habitat2cam_rot_tf
-            pc_global = transform_pc(pc, transform_tf)  # (3, N)
+            # 获取相机姿态变换（此处假设transform_tf已经包含了所有必要的变换）
+            transform_tf = camera_pose_tf  # @ self.habitat2cam_rot_tf（这一行被注释掉了，可能是为了展示原始的旋转变换）
+            # 将点云从相机坐标系转换到全局坐标系
+            pc_global = transform_pc(pc, transform_tf)  # (3, N)，其中N是点的数量
+            # 创建一个新的全局点云对象
             pcd_global = o3d.geometry.PointCloud()
+            # 设置全局点云的点数据（注意：这里假设global_pcd可以累加点云，实际可能需要使用o3d.geometry.PointCloud.concatenate_point_clouds）
             pcd_global.points = o3d.utility.Vector3dVector(pc_global.T)
+            # 将新生成的全局点云累加到全局点云集合中（注意：这里假设global_pcd是一个可以累加点云的特殊对象或列表）
             global_pcd += pcd_global
             # downsample global_pcd
             # if frame_i % (100 * self.map_config.skip_frame) == 99:
@@ -110,6 +122,11 @@ class VLMapBuilderCam:
 
             # if frame_i % 50 == 0:
             #     o3d.visualization.draw_geometries([global_pcd])
+        # 创建 XYZ 坐标轴
+        origin = np.zeros(3)  # 坐标轴的原点
+        axis_length = 1.0  # 坐标轴的长度
+        axis_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(axis_length, origin)
+        o3d.visualization.draw_geometries([global_pcd, axis_frame])
 
         self.pcd_min = np.min(np.asarray(global_pcd.points), axis=0)
         self.pcd_max = np.max(np.asarray(global_pcd.points), axis=0)
@@ -123,6 +140,8 @@ class VLMapBuilderCam:
 
         pbar = tqdm(zip(self.rgb_paths, self.depth_paths, self.camera_pose_tfs), total=len(self.rgb_paths))
         for frame_i, (rgb_path, depth_path, camera_pose_tf) in enumerate(pbar):
+            if frame_i < 100:
+                continue
             if frame_i % self.map_config.skip_frame != 0:
                 continue
             if frame_i in mapped_iter_set:
@@ -199,6 +218,13 @@ class VLMapBuilderCam:
                 self.save_3d_map(grid_feat, grid_pos, weight, grid_rgb, occupied_ids, mapped_iter_set, max_id)
 
         self.save_3d_map(grid_feat, grid_pos, weight, grid_rgb, occupied_ids, mapped_iter_set, max_id)
+
+        rgb = grid_rgb / 255.0
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(grid_pos)
+        pcd.colors = o3d.utility.Vector3dVector(rgb)
+        o3d.visualization.draw_geometries([pcd])
 
     def create_mobile_base_map(self):
         """
@@ -288,6 +314,18 @@ class VLMapBuilderCam:
         )
         self.clip_feat_dim = lseg_model.out_c
         return lseg_model, lseg_transform, crop_size, base_size, norm_mean, norm_std
+
+    def display_point_cloud(self, pc: np.ndarray):
+        # 创建一个Open3D的点云对象
+        l = pc.shape
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc.T)  # 注意这里可能需要转置pc，取决于pc的形状
+
+        # 可选：设置点云的颜色（这里使用白色）
+        pcd.colors = o3d.utility.Vector3dVector(np.ones_like(pc.T) * [0, 0, 0])
+
+        # 使用Open3D可视化点云
+        o3d.visualization.draw_geometries([pcd])
 
     def _backproject_depth(
         self,

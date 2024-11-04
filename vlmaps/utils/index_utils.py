@@ -39,10 +39,18 @@ def find_similar_category_id(class_name, classes_list):
     openai_key = os.environ["OPENAI_KEY"]
     openai.api_key = openai_key
     classes_list_str = ",".join(classes_list)
-    client = openai.OpenAI(api_key=openai_key)
+    client = openai.OpenAI(api_key=openai_key,base_url='https://api.gptsapi.net/v1')
     response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
+            {
+                "role": "user",
+                "content": "You are a helpful assistant that can answer questions about objects and their categories.You can only answer one most relevant word."
+            },
+            {
+                "role": "assistant",
+                "content": "OK."
+            },
             {
                 "role": "user",
                 "content": "What is television most relevant to among tv_monitor,plant,chair",
@@ -189,7 +197,10 @@ def get_dynamic_obstacles_map_3d(
     avg_mode=0,
     vis=False,
 ):
+    # 获取所有障碍物（被占据区域）的掩码
     all_obstacles_mask = obstacles_cropped == 0
+
+    # 使用CLIP模型获取潜在障碍物类别的分割得分
     scores_mat = get_lseg_score(
         clip_model,
         potential_obstacle_classes,
@@ -198,31 +209,62 @@ def get_dynamic_obstacles_map_3d(
         use_multiple_templates=use_multiple_templates,
         avg_mode=avg_mode,
     )
+
+    # 根据得分矩阵预测每个像素的类别
     predict = np.argmax(scores_mat, axis=1)
+
+    # 初始化一个空列表，用于存储目标障碍物类别的索引
     obs_inds = []
+
+    # 遍历所有目标障碍物类别，找到它们在潜在障碍物类别中的索引
     for obs_name in obstacle_classes:
         for i, po_obs_name in enumerate(potential_obstacle_classes):
             if obs_name == po_obs_name:
                 obs_inds.append(i)
 
+    # 打印找到的障碍物类别索引
     print("obs_inds: ", obs_inds)
+
+    # 初始化一个与predict形状相同的全零布尔数组
     pts_mask = np.zeros_like(predict, dtype=bool)
+
+    # 遍历找到的障碍物类别索引，设置pts_mask中对应类别的位置为True
     for id in obs_inds:
         tmp = predict == id
         pts_mask = np.logical_or(pts_mask, tmp)
 
+    # 初始化一个与obstacles_cropped形状相同的全零布尔数组
     # new_obstacles = obstacles_segment_map != 1
     new_obstacles = np.zeros_like(obstacles_cropped, dtype=bool)
+
+    # 获取pts_mask为True的位置对应的grid_pos中的点
     obs_pts = grid_pos[pts_mask]
-    mask1 = np.logical_and(obs_pts[:, 0] - rmin >= 0, obs_pts[:, 1] - cmin >= 0) 
-    mask2 = np.logical_and(obs_pts[:, 0] - rmin < new_obstacles.shape[0], obs_pts[ :, 1 ] - cmin < new_obstacles.shape[1])
+
+    # 生成第一个掩码，确保点的坐标在有效范围内
+    mask1 = np.logical_and(obs_pts[:, 0] - rmin >= 0, obs_pts[:, 1] - cmin >= 0)
+
+    # 生成第二个掩码，确保点的坐标不超过new_obstacles的形状
+    mask2 = np.logical_and(obs_pts[:, 0] - rmin < new_obstacles.shape[0], obs_pts[:, 1] - cmin < new_obstacles.shape[1])
+
+    # 将两个掩码进行逻辑与操作，得到最终的掩码
     mask = np.logical_and(mask1, mask2)
+
+    # 在new_obstacles中标记为动态障碍物
     new_obstacles[obs_pts[mask, 0] - rmin, obs_pts[mask, 1] - cmin] = 1
+
+    # 将所有pts_mask为True的位置都标记为动态障碍物（可能存在重复标记）
     new_obstacles[obs_pts[:, 0] - rmin, obs_pts[:, 1] - cmin] = 1
+
+    # 确保动态障碍物位于原始障碍物区域内
     new_obstacles = np.logical_and(new_obstacles, all_obstacles_mask)
+
+    # 反转new_obstacles，因为原代码中0表示障碍物，1表示非障碍物，而我们需要得到的是动态障碍物的掩码
     new_obstacles = np.logical_not(new_obstacles)
 
+    # 如果设置了可视化标志，则显示新的障碍物地图
     if vis:
         cv2.imshow("new obstacles_cropped", (new_obstacles * 255).astype(np.uint8))
         cv2.waitKey()
+
+    # 返回新的动态障碍物地图
     return new_obstacles

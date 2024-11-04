@@ -39,10 +39,11 @@ def parse_object_goal_instruction(language_instr):
     Example: "first go to the kitchen and then go to the toilet" -> ["kitchen", "toilet"]
     """
     import openai
-
+    # openai.base_url = "https://api.gptsapi.net/v1"
+    # print("openai base_url: ", openai.base_url)
     openai_key = os.environ["OPENAI_KEY"]
     openai.api_key = openai_key
-    client = openai.OpenAI(api_key=openai_key)
+    client = openai.OpenAI(api_key=openai_key,base_url='https://api.gptsapi.net/v1')
     response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
@@ -279,7 +280,7 @@ def parse_spatial_instruction(language_instr):
     instructions_list = [language_instr]
     results = ""
     for lang in instructions_list:
-        client = openai.OpenAI(api_key=openai_key)
+        client = openai.OpenAI(api_key=openai_key,base_url='https://api.gptsapi.net/v1')
         response = client.chat.completions.create(
             model="gpt-4-turbo",
             messages=[

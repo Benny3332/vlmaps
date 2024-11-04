@@ -15,7 +15,7 @@ scene_names:
 data_cfg:
   rgb: true
   depth: true
-  semantic: true
+  semantic: false
   resolution:
     w: 1080
     h: 720

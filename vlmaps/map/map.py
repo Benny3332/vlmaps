@@ -114,7 +114,7 @@ class Map:
 
     def init_categories(self, categories: List[str]) -> np.ndarray:
         return NotImplementedError
-
+    # implemented in vlmap.py
     def customize_obstacle_map(self, potential_obstacle_names: List[str], obstacle_names: List[str]) -> np.ndarray:
         return NotImplementedError
 
@@ -178,16 +178,22 @@ class Map:
         return binary_map
 
     def get_nearest_pos(self, curr_pos: List[float], name: str) -> List[float]:
+        # 获取目标位置信息
         contours, centers, bbox_list = self.get_pos(name)
+        # 过滤掉面积小于阈值的物体
         ids_list = self.filter_small_objects(bbox_list, area_thres=10)
+        # 根据过滤后的id列表，重新整理contours、centers和bbox_list
         contours = [contours[i] for i in ids_list]
         centers = [centers[i] for i in ids_list]
         bbox_list = [bbox_list[i] for i in ids_list]
+        # 如果没有符合条件的物体，则返回当前位置
         if len(centers) == 0:
             return curr_pos
+        # 选择最近的物体
         id = self.select_nearest_obj(centers, bbox_list, curr_pos)
-
+        # 返回当前位置到目标物体轮廓上的最近点
         return self.nearest_point_on_polygon(curr_pos, contours[id])
+
 
     def nearest_point_on_polygon(self, coord: List[float], polygon: List[List[float]]):
         # Create a Shapely Point from the given coordinate

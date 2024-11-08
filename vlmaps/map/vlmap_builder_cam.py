@@ -99,9 +99,9 @@ class VLMapBuilderCam:
             if frame_i % self.map_config.skip_frame != 0:
                 continue
             # 读取RGB图像文件
-            bgr = cv2.imread(str(rgb_path))
+            # bgr = cv2.imread(str(rgb_path))
             # 将BGR图像转换为RGB图像
-            rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            # rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
             # 加载深度图数据
             depth = load_depth_npy(depth_path.as_posix())
             # 将深度图反投影到三维空间，生成点云

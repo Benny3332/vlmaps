@@ -253,7 +253,8 @@ def get_dynamic_obstacles_map_3d(
     new_obstacles[obs_pts[mask, 0] - rmin, obs_pts[mask, 1] - cmin] = 1
 
     # 将所有pts_mask为True的位置都标记为动态障碍物（可能存在重复标记）
-    new_obstacles[obs_pts[:, 0] - rmin, obs_pts[:, 1] - cmin] = 1
+    valid_obs_pts = obs_pts[mask]
+    new_obstacles[valid_obs_pts[:, 0] - rmin, valid_obs_pts[:, 1] - cmin] = 1
 
     # 确保动态障碍物位于原始障碍物区域内
     new_obstacles = np.logical_and(new_obstacles, all_obstacles_mask)

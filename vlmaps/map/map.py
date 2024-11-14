@@ -140,6 +140,7 @@ class Map:
         #     map3d_path = os.path.join(os.path.pardir(map_dir), "concept_fusion_3d")
         #     return ConceptFusion3D(map_dir, map_config, map3d_path)
 
+    # vlmaps.map.vlmap.VLMap.get_pos
     def get_pos(self, name: str) -> Tuple[List[List[int]], List[List[float]], List[np.ndarray], Any]:
         """
         Get the contours, centers, and bbox list of a certain category

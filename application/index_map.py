@@ -3,6 +3,7 @@ import hydra
 from omegaconf import DictConfig
 from vlmaps.map.vlmap import VLMap
 from vlmaps.utils.matterport3d_categories import mp3dcat
+from vlmaps.utils.gml_floor_4_lab import gml4cat
 from vlmaps.utils.visualize_utils import (
     pool_3d_label_to_2d,
     pool_3d_rgb_to_2d,
@@ -30,13 +31,12 @@ def main(config: DictConfig) -> None:
     vlmap.load_map(data_dirs[config.scene_id])
     visualize_rgb_map_3d(vlmap.grid_pos, vlmap.grid_rgb)
     # cat = input("What is your interested category in this scene?")
-    cat = "table"
-
+    cat = "officeChair"
     vlmap._init_clip()
     print("considering categories: ")
-    print(mp3dcat[1:-1])
+    print(gml4cat[1:-1])
     if config.init_categories:
-        vlmap.init_categories(mp3dcat[1:-1])
+        vlmap.init_categories(gml4cat[1:-1])
         mask = vlmap.index_map(cat, with_init_cat=True)
     else:
         mask = vlmap.index_map(cat, with_init_cat=False)

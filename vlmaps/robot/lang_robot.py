@@ -44,7 +44,7 @@ class LangRobot:
             code = f.readlines()
         code = "".join(code)
         return code
-
+    # vlmaps.robot.habitat_lang_robot.HabitatLanguageRobot._set_nav_curr_pose
     def _set_nav_curr_pose(self):
         """
         Set self.curr_pos_on_map and self.curr_ang_deg_on_map

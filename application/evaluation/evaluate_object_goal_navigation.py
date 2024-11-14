@@ -70,8 +70,11 @@ def main(config: DictConfig) -> None:
 
             # 清空已记录的动作
             robot.empty_recorded_actions()
-
-            # 设置代理状态
+            """
+            设置代理状态,读取object_navigation_tasks.json，
+            由vlmaps提供的压缩包解压来的，包含了所有任务的初始状态，
+            这里设置的是初始位姿
+            """
             robot.set_agent_state(object_nav_task.init_hab_tf)
 
             # 遍历物体类别列表

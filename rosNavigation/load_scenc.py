@@ -8,7 +8,6 @@ from omegaconf import DictConfig
 import hydra
 
 # function to display the topdown map
-import habitat_sim
 import cv2
 import open3d as o3d
 
@@ -50,8 +49,6 @@ class HabitatLanguageRobot(LangRobot):
         self.forward_dist = self.config["params"]["forward_dist"]
         self.turn_angle = self.config["params"]["turn_angle"]
 
-        self.sim: habitat_sim.Simulator
-        self.sim = None
         self.last_scene_name = ""
         # self.agent_model_dir = self.config["data_paths"]["agent_mesh_dir"]
 
@@ -70,10 +67,7 @@ class HabitatLanguageRobot(LangRobot):
         self.scene_name = vlmaps_data_dir.name.split("_")[0]
 
         self.setup_map(vlmaps_data_dir)
-        # np.array<bool>
-        cropped_obst_map = self.map.get_obstacle_cropped()
-        if self.config.map_config.potential_obstacle_names and self.config.map_config.obstacle_names:
-            print("come here")
+        if self.config.map_config.potential_obstacle_names and self.config.map_config.obstacle_names and not self.config.map_config.useLocalMap:
             # 这里根据get_dynamic_obstacles_map_3d() vlmaps.yaml obstacle_names障碍物列表生成new obstacles_cropped
             # Map._dilate_map() 对一个二值地图(obstacles_new_cropped, binary_map）进行膨胀处理，同时可选地应用高斯滤波
             self.map.customize_obstacle_map(
@@ -82,7 +76,15 @@ class HabitatLanguageRobot(LangRobot):
                 vis=self.config.nav.vis,
             )
             cropped_obst_map = self.map.get_customized_obstacle_cropped()
-
+            (vlmaps_data_dir / "vlmap_cam").mkdir(parents=True, exist_ok=True)
+            save_path = vlmaps_data_dir / "vlmap_cam" / "cropped_obst_map.npy"
+            np.save(save_path, cropped_obst_map)
+            print(f"{save_path} is saved.")
+        else:
+            # 从本地取出将cropped_obst_map
+            save_path = vlmaps_data_dir / "vlmap_cam" / "cropped_obst_map.npy"
+            cropped_obst_map = np.load(save_path)
+            self.map.obstacles_new_cropped = cropped_obst_map
         self.nav.build_visgraph(
             cropped_obst_map,
             self.vlmaps_dataloader.rmin,

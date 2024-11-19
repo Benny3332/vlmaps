@@ -21,6 +21,7 @@ class VLMap(Map):
         self.categories = None
 
     def init_categories(self, categories: List[str]) -> np.ndarray:
+        self.categories = categories
         vlmaps_data_dir = self.data_dir
         save_path = vlmaps_data_dir / "vlmap_cam" / "scores_mat.npy"
         print(f"Initializing categories from local store: {save_path}")

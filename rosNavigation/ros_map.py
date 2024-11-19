@@ -233,6 +233,7 @@ class Map:
                 results_ids.append(bbox_i)
         return results_ids
 
+    # TODO: 修改为最远的
     def select_nearest_obj(
         self,
         centers: List[List[float]],
@@ -244,7 +245,7 @@ class Map:
             size = np.array([bbox[1] - bbox[0], bbox[3] - bbox[2]])
             dist = get_dist_to_bbox_2d(np.array(c), size, np.array(curr_pos))
             dist_list.append(dist)
-        id = np.argmin(dist_list)
+        id = np.argmax(dist_list)
         return id
 
     def _get_left_pos(self, curr_pos: List[float], tar_pos: List[float], tar_bbox: List[float]) -> List[float]:

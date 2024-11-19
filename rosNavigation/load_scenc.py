@@ -389,7 +389,7 @@ class HabitatLanguageRobot(LangRobot):
         self.curr_ang_deg_on_map = angle_deg
         print("set curr pose: ", row, col, angle_deg)
 
-    def move_to(self, pos: Tuple[float, float]) -> List[str]:
+    def move_to(self, pos: Tuple[float, float]) -> List[List[float]]:
         """Move the robot to the position on the full map
             based on accurate localization in the environment
 
@@ -399,26 +399,13 @@ class HabitatLanguageRobot(LangRobot):
         Returns:
             List[str]: list of actions
         """
-        actual_actions_list = []
-        success = False
         # while not success:
-        self._set_nav_curr_pose()
         curr_pose_on_full_map = self.get_agent_pose_on_map()  # (row, col, angle_deg) on full map
         paths = self.nav.plan_to(
             curr_pose_on_full_map[:2], pos, vis=self.config["nav"]["vis"]
         )  # take (row, col) in full map
         print(paths)
-        actions_list, poses_list = self.controller.convert_paths_to_actions(curr_pose_on_full_map, paths[1:])
-        success, real_actions_list = self.execute_actions(actions_list, poses_list, vis=self.config["nav"]["vis"])
-        actual_actions_list.extend(real_actions_list)
-
-        actual_actions_list.append("stop")
-
-        if not hasattr(self, "recorded_actions_list"):
-            self.recorded_actions_list = []
-        self.recorded_actions_list.extend(actual_actions_list)
-
-        return actual_actions_list
+        return paths
 
     def turn(self, angle_deg: float):
         """

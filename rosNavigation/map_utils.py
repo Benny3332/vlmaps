@@ -358,3 +358,19 @@ def get_segment_islands_pos(segment_map, label_id, detect_internal_contours=Fals
         centers_list.append([(xmin + xmax) / 2, (ymin + ymax) / 2])
 
     return contours_list, centers_list, bbox_list, hierarchy
+
+def plan_to_pos_v2(start, goal, obstacles, G: vg.VisGraph = None, vis=False):
+    """
+    plan a path on a cropped obstacles map represented by a graph.
+    Start and goal are tuples of (row, col) in the map.
+    """
+
+    print("start: ", start)
+    print("goal: ", goal)
+    if vis:
+        obs_map_vis = (obstacles[:, :, None] * 255).astype(np.uint8)
+        obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
+        obs_map_vis = cv2.circle(obs_map_vis, (int(start[1]), int(start[0])), 3, (255, 0, 0), -1)
+        obs_map_vis = cv2.circle(obs_map_vis, (int(goal[1]), int(goal[0])), 3, (0, 0, 255), -1)
+        cv2.imshow("planned path", obs_map_vis)
+        cv2.waitKey()

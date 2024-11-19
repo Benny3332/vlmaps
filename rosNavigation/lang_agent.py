@@ -45,7 +45,7 @@ class LangRobot:
         code = "".join(code)
         return code
     # vlmaps.robot.habitat_lang_robot.HabitatLanguageRobot._set_nav_curr_pose
-    def _set_nav_curr_pose(self):
+    def set_nav_curr_pose(self, x, y, angle):
         """
         Set self.curr_pos_on_map and self.curr_ang_deg_on_map
         based on the simulator agent ground truth pose
@@ -179,6 +179,10 @@ class LangRobot:
         self._set_nav_curr_pose()
         pos = self.map.get_nearest_pos(self.curr_pos_on_map, name)
         self.move_to(pos)
+
+    def find_location_to_object(self, name: str):
+        pos = self.map.get_nearest_pos(self.curr_pos_on_map, name)
+        return pos
 
     def move_forward(self, meters: float):
         self._set_nav_curr_pose()

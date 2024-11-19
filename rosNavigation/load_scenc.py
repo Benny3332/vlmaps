@@ -380,6 +380,15 @@ class HabitatLanguageRobot(LangRobot):
         grid_map_pos_3d = self.map.grid_pos[id]
         return grid_map_pos_3d
 
+    def set_nav_curr_pose(self, row, col, angle_deg):
+        """
+        Set self.curr_pos_on_map and self.curr_ang_deg_on_map
+        based on the simulator agent ground truth pose
+        """
+        self.curr_pos_on_map = (row, col)
+        self.curr_ang_deg_on_map = angle_deg
+        print("set curr pose: ", row, col, angle_deg)
+
     def move_to(self, pos: Tuple[float, float]) -> List[str]:
         """Move the robot to the position on the full map
             based on accurate localization in the environment

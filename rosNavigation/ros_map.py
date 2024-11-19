@@ -119,9 +119,13 @@ class Map:
 
     @staticmethod
     def create(map_config: DictConfig) -> Map:
-        from vlmaps.map import VLMap
-
-        if map_config.map_type == "vlmap":
+        # ros_vlMap不加载clip
+        if not map_config.useLocalMap:
+            from vlmaps.map import VLMap
+            if map_config.map_type == "vlmap":
+                return VLMap(map_config)
+        else:
+            from ros_vlmap import VLMap
             return VLMap(map_config)
 
         # if map_type == "lseg":

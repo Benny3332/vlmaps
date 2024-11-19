@@ -28,9 +28,7 @@ def main(config: DictConfig) -> None:
     # 遍历场景ID列表
     for scene_i, scene_id in enumerate(scene_ids):
         # 设置场景
-        # TODO: 这里需要做进一步修改，重新实现方法，不调用VLMaps
         robot.setup_scene(scene_id)
-        # TODO: 这里需要做进一步修改，重新实现方法，不调用VLMaps
         robot.map.init_categories(gml4cat.copy())
 
 if __name__ == "__main__":

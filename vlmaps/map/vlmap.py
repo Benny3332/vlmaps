@@ -141,6 +141,10 @@ class VLMap(Map):
             use_multiple_templates=True,
             add_other=True,
         )  # score for name and other
+        vlmaps_data_dir = self.data_dir
+        save_path = vlmaps_data_dir / "vlmap_cam" / "scores_mat.npy"
+        np.save(save_path, self.scores_mat)
+        print(f"{save_path} is saved.")
         return self.scores_mat
 
     def index_map(self, language_desc: str, with_init_cat: bool = True):

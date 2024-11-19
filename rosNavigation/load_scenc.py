@@ -85,6 +85,7 @@ class HabitatLanguageRobot(LangRobot):
             save_path = vlmaps_data_dir / "vlmap_cam" / "cropped_obst_map.npy"
             cropped_obst_map = np.load(save_path)
             self.map.obstacles_new_cropped = cropped_obst_map
+            print(f"{save_path} is load.")
         self.nav.build_visgraph(
             cropped_obst_map,
             self.vlmaps_dataloader.rmin,

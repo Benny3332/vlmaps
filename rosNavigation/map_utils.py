@@ -322,3 +322,39 @@ def cam_load_3d_map(map_path: Union[Path, str]):
         pcd_max = f["pcd_max"][:]
         cs = f["cs"][()]
         return mapped_iter_list, grid_feat, grid_pos, weight, occupied_ids, grid_rgb, pcd_min, pcd_max, cs
+
+def pool_3d_label_to_2d(mask_3d: np.ndarray, grid_pos: np.ndarray, gs: int) -> np.ndarray:
+    mask_2d = np.zeros((gs, gs), dtype=bool)
+    for i, pos in enumerate(grid_pos):
+        row, col, h = pos
+        mask_2d[row, col] = mask_3d[i] or mask_2d[row, col]
+
+    return mask_2d
+
+def get_segment_islands_pos(segment_map, label_id, detect_internal_contours=False):
+    mask = segment_map == label_id
+    mask = mask.astype(np.uint8)
+    detect_type = cv2.RETR_EXTERNAL
+    if detect_internal_contours:
+        detect_type = cv2.RETR_TREE
+
+    contours, hierarchy = cv2.findContours(mask, detect_type, cv2.CHAIN_APPROX_SIMPLE)
+    # convert contours back to numpy index order
+    contours_list = []
+    for contour in contours:
+        tmp = contour.reshape((-1, 2))
+        tmp_1 = np.stack([tmp[:, 1], tmp[:, 0]], axis=1)
+        contours_list.append(tmp_1)
+
+    centers_list = []
+    bbox_list = []
+    for c in contours_list:
+        xmin = np.min(c[:, 0])
+        xmax = np.max(c[:, 0])
+        ymin = np.min(c[:, 1])
+        ymax = np.max(c[:, 1])
+        bbox_list.append([xmin, xmax, ymin, ymax])
+
+        centers_list.append([(xmin + xmax) / 2, (ymin + ymax) / 2])
+
+    return contours_list, centers_list, bbox_list, hierarchy

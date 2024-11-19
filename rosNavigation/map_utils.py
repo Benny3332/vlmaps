@@ -3,7 +3,11 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import cv2
 import pyvisgraph as vg
+import h5py
+from pathlib import Path
+
 from scipy.spatial.distance import cdist
+from typing import List, Dict, Tuple, Set, Union
 
 def get_bbox(center, size):
     """
@@ -275,3 +279,46 @@ def find_closest_points_between_two_contours(obs_map, contour_a, contour_b):
     id = np.argmin(dists)
     ida, idb = np.unravel_index(id, dists.shape)
     return [rows_a[ida], cols_a[ida]], [rows_b[idb], cols_b[idb]]
+
+def load_3d_map(map_path: str) -> Tuple[Set[int], np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Load 3D voxel map with features
+
+    Args:
+        map_path (str): path to save the map as an H5DF file.
+    Return:
+        mapped_iter_list (Set[int]): stores already processed frame's number.
+        grid_feat (np.ndarray): (N, feat_dim) features of each 3D point.
+        grid_pos (np.ndarray): (N, 3) each row is the (row, col, height) of an occupied cell.
+        weight (np.ndarray): (N,) accumulated weight of the cell's features.
+        occupied_ids (np.ndarray): (gs, gs, vh) either -1 or 1. 1 indicates
+            occupation.
+        grid_rgb (np.ndarray, optional): (N, 3) each row stores the rgb value
+            of the cell.
+        ---
+        N is the total number of occupied cells in the 3D voxel map.
+        gs is the grid size (number of cells on each side).
+        vh is the number of cells in height direction.
+    """
+    with h5py.File(map_path, "r") as f:
+        mapped_iter_list = f["mapped_iter_list"][:].tolist()
+        grid_feat = f["grid_feat"][:]
+        grid_pos = f["grid_pos"][:]
+        weight = f["weight"][:]
+        occupied_ids = f["occupied_ids"][:]
+        grid_rgb = None
+        if "grid_rgb" in f:
+            grid_rgb = f["grid_rgb"][:]
+        return mapped_iter_list, grid_feat, grid_pos, weight, occupied_ids, grid_rgb
+
+def cam_load_3d_map(map_path: Union[Path, str]):
+    with h5py.File(map_path, "r") as f:
+        mapped_iter_list = f["mapped_iter_list"][:].tolist()
+        grid_feat = f["grid_feat"][:]
+        grid_pos = f["grid_pos"][:]
+        weight = f["weight"][:]
+        occupied_ids = f["occupied_ids"][:]
+        grid_rgb = f["grid_rgb"][:]
+        pcd_min = f["pcd_min"][:]
+        pcd_max = f["pcd_max"][:]
+        cs = f["cs"][()]
+        return mapped_iter_list, grid_feat, grid_pos, weight, occupied_ids, grid_rgb, pcd_min, pcd_max, cs

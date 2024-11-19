@@ -1,7 +1,6 @@
 from pathlib import Path
 import yaml
 import numpy as np
-import h5py
 import cv2
 
 import torch

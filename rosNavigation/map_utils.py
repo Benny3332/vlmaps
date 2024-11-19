@@ -5,6 +5,7 @@ import cv2
 import pyvisgraph as vg
 import h5py
 from pathlib import Path
+from PIL import Image
 
 from scipy.spatial.distance import cdist
 from typing import List, Dict, Tuple, Set, Union
@@ -359,6 +360,13 @@ def get_segment_islands_pos(segment_map, label_id, detect_internal_contours=Fals
 
     return contours_list, centers_list, bbox_list, hierarchy
 
+def get_nearby_position(goal: Tuple[float, float], G: vg.VisGraph) -> Tuple[float, float]:
+    for dr, dc in zip([-1, 1, -1, 1], [-1, -1, 1, 1]):
+        goalvg_new = vg.Point(goal[0] + dr, goal[1] + dc)
+        poly_id_new = G.point_in_polygon(goalvg_new)
+        if poly_id_new == -1:
+            return (goal[0] + dr, goal[1] + dc)
+
 def plan_to_pos_v2(start, goal, obstacles, G: vg.VisGraph = None, vis=False):
     """
     plan a path on a cropped obstacles map represented by a graph.
@@ -374,3 +382,56 @@ def plan_to_pos_v2(start, goal, obstacles, G: vg.VisGraph = None, vis=False):
         obs_map_vis = cv2.circle(obs_map_vis, (int(goal[1]), int(goal[0])), 3, (0, 0, 255), -1)
         cv2.imshow("planned path", obs_map_vis)
         cv2.waitKey()
+
+    path = []
+    startvg = vg.Point(start[0], start[1])
+    if obstacles[int(start[0]), int(start[1])] == 0:
+        print("start in obstacles")
+        rows, cols = np.where(obstacles == 1)
+        dist_sq = (rows - start[0]) ** 2 + (cols - start[1]) ** 2
+        id = np.argmin(dist_sq)
+        new_start = [rows[id], cols[id]]
+        path.append(new_start)
+        startvg = vg.Point(new_start[0], new_start[1])
+
+    goalvg = vg.Point(goal[0], goal[1])
+    poly_id = G.point_in_polygon(goalvg)
+    if obstacles[int(goal[0]), int(goal[1])] == 0:
+        print("goal in obstacles")
+        try:
+            goalvg = G.closest_point(goalvg, poly_id, length=1)
+        except:
+            goal_new = get_nearby_position(goal, G)
+            goalvg = vg.Point(goal_new[0], goal_new[1])
+
+        print("goalvg: ", goalvg)
+    path_vg = G.shortest_path(startvg, goalvg)
+
+    for point in path_vg:
+        subgoal = [point.x, point.y]
+        path.append(subgoal)
+    print(path)
+
+    # check the final goal is not in obstacles
+    # if obstacles[int(goal[0]), int(goal[1])] == 0:
+    #     path = path[:-1]
+
+    if vis:
+        obs_map_vis = (obstacles[:, :, None] * 255).astype(np.uint8)
+        obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
+
+        for i, point in enumerate(path):
+            subgoal = (int(point[1]), int(point[0]))
+            print(i, subgoal)
+            obs_map_vis = cv2.circle(obs_map_vis, subgoal, 5, (255, 0, 0), -1)
+            if i > 0:
+                cv2.line(obs_map_vis, last_subgoal, subgoal, (255, 0, 0), 2)
+            last_subgoal = subgoal
+        obs_map_vis = cv2.circle(obs_map_vis, (int(start[1]), int(start[0])), 5, (0, 255, 0), -1)
+        obs_map_vis = cv2.circle(obs_map_vis, (int(goal[1]), int(goal[0])), 5, (0, 0, 255), -1)
+
+        seg = Image.fromarray(obs_map_vis)
+        cv2.imshow("planned path", obs_map_vis)
+        cv2.waitKey()
+
+    return path

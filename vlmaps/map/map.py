@@ -178,7 +178,7 @@ class Map:
         binary_map = cv2.resize(binary_map.astype(float), (w, h))
         return binary_map
 
-    def get_nearest_pos(self, curr_pos: List[float], name: str) -> List[float]:
+    def get_nearest_pos(self, curr_pos: List[float], name: str, vis: bool = False) -> List[float]:
         # 获取目标位置信息
         contours, centers, bbox_list = self.get_pos(name)
         # 过滤掉面积小于阈值的物体
@@ -192,6 +192,17 @@ class Map:
             return curr_pos
         # 选择最近的物体
         id = self.select_nearest_obj(centers, bbox_list, curr_pos)
+        # 显示选中物体的轮廓
+        if vis:
+            obs_map_vis = (self.get_customized_obstacle_cropped()[:, :, None] * 255).astype(np.uint8)
+            obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
+            cv2.imshow("aim object list", obs_map_vis)
+            cv2.waitKey()
+            contour = contours[id]
+            contour_cv2 = contour[:, [1, 0]]
+            cv2.drawContours(obs_map_vis, [contour_cv2], 0, (0, 255, 0), 3)
+            cv2.imshow("aim object list", obs_map_vis)
+            cv2.waitKey()
         # 返回当前位置到目标物体轮廓上的最近点
         return self.nearest_point_on_polygon(curr_pos, contours[id])
 
@@ -230,6 +241,7 @@ class Map:
                 results_ids.append(bbox_i)
         return results_ids
 
+    #  TODO: there has some change should be recover
     def select_nearest_obj(
         self,
         centers: List[List[float]],
@@ -241,8 +253,12 @@ class Map:
             size = np.array([bbox[1] - bbox[0], bbox[3] - bbox[2]])
             dist = get_dist_to_bbox_2d(np.array(c), size, np.array(curr_pos))
             dist_list.append(dist)
-        id = np.argmin(dist_list)
-        return id
+        # id = np.argmax(dist_list)
+        dist_array = np.array(dist_list)
+        sorted_indices = np.argsort(dist_array)
+        second_farthest_index = sorted_indices[-1]
+
+        return second_farthest_index
 
     def _get_left_pos(self, curr_pos: List[float], tar_pos: List[float], tar_bbox: List[float]) -> List[float]:
         di = tar_pos[0] - curr_pos[0]

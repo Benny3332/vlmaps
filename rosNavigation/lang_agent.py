@@ -180,8 +180,8 @@ class LangRobot:
         pos = self.map.get_nearest_pos(self.curr_pos_on_map, name)
         self.move_to(pos)
 
-    def find_location_to_object(self, name: str):
-        pos = self.map.get_nearest_pos(self.curr_pos_on_map, name)
+    def find_location_to_object(self, name: str, vis: bool = False):
+        pos = self.map.get_nearest_pos(self.curr_pos_on_map, name, vis)
         return pos
 
     def move_forward(self, meters: float):

@@ -190,7 +190,7 @@ def build_visgraph_with_obs_map(obs_map, use_internal_contour=False, internal_po
     poly_list = []
 
     # 遍历所有轮廓
-    for contour in contours_list:
+    for i, contour in enumerate(contours_list):
         # 如果开启可视化，则绘制轮廓
         if vis:
             contour_cv2 = contour[:, [1, 0]]
@@ -206,7 +206,7 @@ def build_visgraph_with_obs_map(obs_map, use_internal_contour=False, internal_po
         xlist = [x.x for x in contour_pos]
         zlist = [x.y for x in contour_pos]
         # 如果开启可视化，则绘制轮廓点的x和z坐标曲线
-        if vis:
+        if vis and i == len(contours_list) - 1:
             # plt.plot(xlist, zlist)
 
             cv2.waitKey()

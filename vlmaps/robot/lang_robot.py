@@ -175,7 +175,7 @@ class LangRobot:
         pos = self.map.get_east_pos(self.curr_pos_on_map, self.curr_ang_deg_on_map, name)
         self.move_to(pos)
 
-    def move_to_object(self, name: str):
+    def move_to_object(self, name: str, vis: bool = False):
         self._set_nav_curr_pose()
         pos = self.map.get_nearest_pos(self.curr_pos_on_map, name)
         self.move_to(pos)

@@ -181,7 +181,7 @@ class Map:
         binary_map = cv2.resize(binary_map.astype(float), (w, h))
         return binary_map
 
-    def get_nearest_pos(self, curr_pos: List[float], name: str) -> List[float]:
+    def get_nearest_pos(self, curr_pos: List[float], name: str, vis: bool = False) -> List[float]:
         # 获取目标位置信息
         contours, centers, bbox_list = self.get_pos(name)
         # 过滤掉面积小于阈值的物体

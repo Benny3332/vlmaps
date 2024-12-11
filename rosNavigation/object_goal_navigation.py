@@ -33,7 +33,7 @@ def main(config: DictConfig) -> None:
         for cat in ["officeChair", "table"]:
             print(f"Navigating to category {cat}")
             robot.set_nav_curr_pose(3,3, 30)
-            obj_pos = robot.find_location_to_object(cat)
+            obj_pos = robot.find_location_to_object(cat, vis=True)
             print(f"Found {cat} at position: {obj_pos}")
             robot.move_to(obj_pos)
 

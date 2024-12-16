@@ -149,13 +149,11 @@ class VLMapBuilderCam:
             bgr = cv2.imread(str(rgb_path))
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
             depth = load_depth_npy(depth_path.as_posix())
-
             # # get pixel-aligned LSeg features
             pix_feats = get_lseg_feat(
                 lseg_model, rgb, ["example"], lseg_transform, self.device, crop_size, base_size, norm_mean, norm_std
             )
             pix_feats_intr = get_sim_cam_mat(pix_feats.shape[2], pix_feats.shape[3])
-
             # backproject depth point cloud
             pc = self._backproject_depth(depth, calib_mat, depth_sample_rate, min_depth=0.1, max_depth=100)
 
@@ -191,7 +189,9 @@ class VLMapBuilderCam:
                 alpha = np.exp(-radial_dist_sq / (2 * sigma_sq))
 
                 # update map features
-                if not (px < 0 or py < 0 or px >= pix_feats.shape[3] or py >= pix_feats.shape[2]):
+                if(not (px < 0 or py < 0 or px >= pix_feats.shape[3] or py >= pix_feats.shape[2])) and \
+                (0 <= row < occupied_ids.shape[0] and 0 <= height < occupied_ids.shape[1] and 0 <= col <
+                 occupied_ids.shape[2]):
                     feat = pix_feats[0, :, py, px]
                     occupied_id = occupied_ids[row, height, col]
                     if occupied_id == -1:

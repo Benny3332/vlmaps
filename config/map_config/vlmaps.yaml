@@ -9,7 +9,10 @@ pose_info:
   base_left_axis: [-1, 0, 0]
   base_up_axis: [0, 1, 0]
 skip_frame: 1
-cam_calib_mat: [431.574523925781, 0, 429.674438476562, 0, 431.574523925781, 237.917541503906, 0, 0, 1]
+#realsence depth
+#cam_calib_mat: [431.574523925781, 0, 429.674438476562, 0, 431.574523925781, 237.917541503906, 0, 0, 1]
+#realsense rgb
+cam_calib_mat: [606.160278320312, 0, 433.248992919922, 0, 606.088684082031, 254.570159912109, 0, 0, 1]
 grid_size: ${params.gs}
 cell_size: ${params.cs}
 depth_sample_rate: 100
@@ -33,3 +36,4 @@ obstacle_names:
   - "stairs"
   - "other"
 categories: "mp3d" # "mp3d", "ai2thor"
+vis: True

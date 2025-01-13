@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 from vlmaps.lseg.modules.models.lseg_net import LSegEncNet
 from vlmaps.utils.lseg_utils import get_lseg_feat
 from vlmaps.utils.matterport3d_categories import mp3dcat
-from vlmaps.utils.gml_floor_4_lab import gml4cat
+from vlmaps.utils.gml_floor_4_lab import (gml4cat, gml5cat)
 device = ""
 clip_feat_dim = 0
 def _init_lseg():
@@ -55,13 +55,23 @@ def _init_lseg():
     return lseg_model, lseg_transform, crop_size, base_size, norm_mean, norm_std
 
 if __name__ == "__main__":
-    file_path = "/home/benny/data/collect_tran_vlmaps_data/5LpN333mAk7_1/rgb"
+    file_path = "/home/benny/data/dog_origin/gml_2024-12-17-17-36-28/rgb"
     # file_path = "/media/benny/bennyMove/data/collect_tran_vlmaps_data/"
-    rgb_file_name = "001094.png"
-    rgb_path = Path(file_path) / rgb_file_name
+    rgb_file_name = "000577.png"
     lseg_model, lseg_transform, crop_size, base_size, norm_mean, norm_std = _init_lseg()
-    bgr= cv2.imread(str(rgb_path))
-    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    pix_feats = get_lseg_feat(
-        lseg_model, rgb, gml4cat[1:-1], lseg_transform, device, crop_size, base_size, norm_mean, norm_std, vis=True
-    )
+    # rgb_path = Path(file_path) / rgb_file_name
+    # bgr = cv2.imread(str(rgb_path))
+    # rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    # pix_feats = get_lseg_feat(
+    #     lseg_model, rgb, gml5cat[1:-1], lseg_transform, device, crop_size, base_size, norm_mean, norm_std, vis=True
+    # )
+    png_files = [f for f in os.listdir(file_path) if f.endswith('.png')]
+    png_files.sort()
+    for file in png_files:
+        if file.endswith('.png'):
+            rgb_path = Path(file_path) / file
+            bgr= cv2.imread(str(rgb_path))
+            rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            pix_feats = get_lseg_feat(
+                lseg_model, rgb, gml5cat[1:-1], lseg_transform, device, crop_size, base_size, norm_mean, norm_std, vis=True
+            )

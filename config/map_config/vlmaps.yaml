@@ -8,11 +8,11 @@ pose_info:
   base_forward_axis: [0, 0, -1]
   base_left_axis: [-1, 0, 0]
   base_up_axis: [0, 1, 0]
-skip_frame: 1
+skip_frame: 2
 #realsence depth
-#cam_calib_mat: [431.574523925781, 0, 429.674438476562, 0, 431.574523925781, 237.917541503906, 0, 0, 1]
+#cam_calib_mat: [425.571807861328, 0, 425.977661132812, 0, 425.571807861328, 241.062408447266, 0, 0, 1]
 #realsense rgb
-cam_calib_mat: [606.160278320312, 0, 433.248992919922, 0, 606.088684082031, 254.570159912109, 0, 0, 1]
+cam_calib_mat: [604.545959472656, 0, 432.69287109375, 0, 604.094177246094, 254.289428710938, 0, 0, 1]
 grid_size: ${params.gs}
 cell_size: ${params.cs}
 depth_sample_rate: 100
@@ -20,13 +20,16 @@ dilate_iter: 3
 gaussian_sigma: 1.0
 customize_obstacle_map: False
 potential_obstacle_names:
+  - "officeChair"
   - "chair"
   - "wall"
-  - "wall above the door"
   - "table"
   - "window"
   - "floor"
+  - "ceiling"
   - "stairs"
+  - "light gray floor"
+  - "door"
   - "other"
 obstacle_names:
   - "wall"

@@ -160,11 +160,12 @@ class VLMapBuilderCam:
             # transform the point cloud to global frame (init base frame)
             transform_tf = camera_pose_tf  # @ self.habitat2cam_rot_tf
             pc_global = transform_pc(pc, transform_tf)  # (3, N)
-
             for i, (p, p_local) in enumerate(zip(pc_global.T, pc.T)):
                 row, height, col = np.round(((p - self.pcd_min) / cs)).astype(int)
-
+                rgb_height, rgb_width = rgb.shape[:2]
                 px, py, pz = project_point(calib_mat, p_local)
+                if px > rgb_width - 1 or px < 0 or py > rgb_height - 1  or py < 0:
+                    continue
                 rgb_v = rgb[py, px, :]
                 px, py, pz = project_point(pix_feats_intr, p_local)
                 if row >= height_map.shape[0] or col >= height_map.shape[1] or row < 0 or col < 0:
@@ -211,7 +212,6 @@ class VLMapBuilderCam:
                             weight[occupied_id] + alpha
                         )
                         weight[occupied_id] += alpha
-
             mapped_iter_set.add(frame_i)
             if frame_i % (self.map_config.skip_frame * 100) == self.map_config.skip_frame * 99:
                 print(f"Temporarily saving {max_id} features at iter {frame_i}...")

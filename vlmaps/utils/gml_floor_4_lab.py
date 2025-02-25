@@ -18,3 +18,15 @@ gml4cat = [
     "water cooler",
     "objects",
 ]
+
+gml5cat = [
+    "void",
+    "White wall",
+    "door",
+    "light gray floor",
+    "floor",
+    "ceiling",
+    "window",
+    "black officeChair",
+    "object",
+]

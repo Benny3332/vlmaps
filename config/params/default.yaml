@@ -21,6 +21,9 @@ sim_setting:
   lidar_fov: 360
   depth_img_for_lidar_n: 20
   img_save_dir: "/tmp"
+  frustum_culling: True
+  gpu_device_id: 1
+  render_gui: True
 # map_config:
 #   grid_size: ${params.gs}
 #   cell_size: ${params.cs}

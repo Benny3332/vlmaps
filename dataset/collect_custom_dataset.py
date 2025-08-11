@@ -15,8 +15,8 @@ from vlmaps.utils.habitat_utils import *
 def main(config: DictConfig) -> None:
     os.environ["MAGNUM_LOG"] = "quiet"
     os.environ["HABITAT_SIM_LOG"] = "quiet"
-    os.makedirs(config.data_paths.vlmaps_data_dir, exist_ok=True)
-    dataset_dir = Path(config.data_paths.vlmaps_data_dir) / "vlmaps_dataset"
+    os.makedirs(config.vlmaps_data_dir, exist_ok=True)
+    dataset_dir = Path(config.vlmaps_data_dir)
 
     scene_dirs = []
     for scene_name in config.scene_names:
@@ -43,7 +43,7 @@ def main(config: DictConfig) -> None:
         # img_save_dir += f"{scenes_names[SCENE_ID]}_1"
         # os.makedirs(img_save_dir, exist_ok=True)
 
-        test_scene = os.path.join(config.data_paths.habitat_scene_dir, scene_name, scene_name + ".glb")
+        test_scene = os.path.join(config.habitat_scene_dir, scene_name, scene_name + ".glb")
 
         sim_setting = {
             "scene": test_scene,
@@ -92,8 +92,12 @@ def main(config: DictConfig) -> None:
         # random_pt = sim.pathfinder.get_random_navigable_point()
         # agent_state.position = np.array([1.5, height_list[np.random.randint(0, len(height_list) - 1)], 4.0])
         agent_state.position = random_pt
+        # agent.set_state(agent_state)
+        # agent_state = habitat_sim.AgentState()
+        pose = [3.278000593185425,	3.456643581390381,	4.238160133361816,	0.0,	0.0,	0.0,	1.0]
+        agent_state.position = pose[:3]
+        agent_state.rotation = pose[3:]
         agent.set_state(agent_state)
-
         agent_state = agent.get_state()
         print("agent_state: position", agent_state.position, "rotation", agent_state.rotation)
 
@@ -106,6 +110,7 @@ def main(config: DictConfig) -> None:
         while True:
             show_rgb(obs)
             k, action = keyboard_control_fast()
+            # print(f"keybroad: {k}")
             if k != -1:
                 if action == "stop":
                     break

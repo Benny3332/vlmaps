@@ -3,13 +3,11 @@ from pathlib import Path
 import numpy as np
 from omegaconf import DictConfig
 import hydra
-import cv2
-
-from vlmaps.task.habitat_object_nav_task import HabitatObjectNavigationTask
+import logging
+from vlmaps.task.habitat_object_nav_task_color import HabitatObjectNavigationTaskColor
 from vlmaps.robot.habitat_lang_robot import HabitatLanguageRobot
 from vlmaps.utils.llm_utils import parse_object_goal_instruction
-from vlmaps.utils.matterport3d_categories import mp3dcat
-
+from vlmaps.utils.matterport3d_categories import (mp3dcat, mp3dcat_2)
 
 @hydra.main(
     version_base=None,
@@ -17,6 +15,10 @@ from vlmaps.utils.matterport3d_categories import mp3dcat
     config_name="object_goal_navigation_cfg",
 )
 def main(config: DictConfig) -> None:
+    logging.basicConfig(
+        level=logging.debug,
+        format='[%(filename)s:%(lineno)d] %(message)s'
+        )
     # 设置环境变量，关闭日志输出
     os.environ["MAGNUM_LOG"] = "quiet"
     os.environ["HABITAT_SIM_LOG"] = "quiet"
@@ -29,7 +31,7 @@ def main(config: DictConfig) -> None:
     robot = HabitatLanguageRobot(config)
 
     # 创建导航任务实例，没有其它操作
-    object_nav_task = HabitatObjectNavigationTask(config)
+    object_nav_task = HabitatObjectNavigationTaskColor(config)
 
     # 重置导航任务的度量指标
     object_nav_task.reset_metrics()
@@ -47,7 +49,7 @@ def main(config: DictConfig) -> None:
         robot.setup_scene(scene_id)
 
         # 初始化类别
-        robot.map.init_categories(mp3dcat.copy())
+        robot.map.init_categories(mp3dcat_2.copy())
 
         # 设置导航任务的场景
         object_nav_task.setup_scene(robot.vlmaps_dataloader)
@@ -63,7 +65,7 @@ def main(config: DictConfig) -> None:
             """
             object_nav_task.setup_task(task_id)
             # 打印目标指令
-            print(f"instruction: {object_nav_task.instruction}")
+            logging.info(f"instruction: {object_nav_task.instruction}")
 
             # 解析目标指令中的物体类别,调用GPT API解析指令，返回一个列表，每个元素都是一个物体
             object_categories = parse_object_goal_instruction(object_nav_task.instruction)
@@ -80,7 +82,7 @@ def main(config: DictConfig) -> None:
             # 遍历物体类别列表
             for cat_i, cat in enumerate(object_categories):
                 # 打印导航到的类别
-                print(f"Navigating to category {cat}")
+                logging.info(f"Navigating to category {cat}")
 
                 # 执行移动到物体的动作
                 actions_list = robot.move_to_object(cat, config.nav.vis)
@@ -90,11 +92,11 @@ def main(config: DictConfig) -> None:
 
             # 重置代理状态
             robot.set_agent_state(object_nav_task.init_hab_tf)
-            print("###repeat task###")
+            logging.info("###repeat task###")
             # 遍历已记录的动作列表
             for action in recorded_actions_list:
                 # 执行测试步骤
-                object_nav_task.test_step(robot.sim, action, vis=config.nav.vis2)
+                object_nav_task.test_step(robot.sim, robot, action, vis=config.nav.vis2)
 
             # 获取保存目录
             save_dir = robot.vlmaps_dataloader.data_dir / (config.map_config.map_type + "_obj_nav_results")

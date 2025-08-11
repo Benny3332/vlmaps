@@ -1,6 +1,6 @@
 import os
 import openai
-
+import httpx
 
 def parse_object_goal_instruction_deprecated(language_instr):
     """
@@ -41,11 +41,11 @@ def parse_object_goal_instruction(language_instr):
     import openai
     # openai.base_url = "https://api.gptsapi.net/v1"
     # print("openai base_url: ", openai.base_url)
-    openai_key = os.environ["OPENAI_KEY"]
+    openai_key = os.environ["DASHSCOPE_API_KEY"]
     openai.api_key = openai_key
-    client = openai.OpenAI(api_key=openai_key,base_url='https://api.gptsapi.net/v1')
+    client = openai.OpenAI(api_key=openai_key, base_url='https://dashscope.aliyuncs.com/compatible-mode/v1', http_client=httpx.Client(trust_env=False))
     response = client.chat.completions.create(
-        model="gpt-4-turbo",
+        model="qwen-turbo",
         messages=[
             {
                 "role": "user",
@@ -120,6 +120,7 @@ def parse_object_goal_instruction(language_instr):
     )
 
     text = response.choices[0].message.content
+    print(f"GPT analyse result: {text}")
     return [x.strip() for x in text.split(",")]
 
 
@@ -274,15 +275,15 @@ robot.move_forward(3)
 def parse_spatial_instruction(language_instr):
     import openai
 
-    openai_key = os.environ["OPENAI_KEY"]
+    openai_key = os.environ["DASHSCOPE_API_KEY"]
     openai.api_key = openai_key
     # instructions_list = language_instr.split(",")
     instructions_list = [language_instr]
     results = ""
     for lang in instructions_list:
-        client = openai.OpenAI(api_key=openai_key,base_url='https://api.gptsapi.net/v1')
+        client = openai.OpenAI(api_key=openai_key, base_url='https://dashscope.aliyuncs.com/compatible-mode/v1', http_client=httpx.Client(trust_env=False))
         response = client.chat.completions.create(
-            model="gpt-4-turbo",
+            model="qwen-turbo",
             messages=[
                 {"role": "user", "content": "move a bit to the right of the refrigerator"},
                 {"role": "assistant", "content": "robot.move_to_right('refrigerator')"},

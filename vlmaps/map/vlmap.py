@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
 import gdown
-
+import logging
 from tqdm import tqdm
 import clip
 import cv2
@@ -28,6 +28,7 @@ from vlmaps.utils.visualize_utils import pool_3d_label_to_2d
 #     segment_lseg_map,
 # )
 from vlmaps.map.vlmap_builder import VLMapBuilder
+from vlmaps.map.vlmap_builder_2 import VLMapBuilder2
 from vlmaps.map.vlmap_builder_cam import VLMapBuilderCam
 from vlmaps.utils.mapping_utils import load_3d_map
 from vlmaps.map.map import Map
@@ -55,6 +56,17 @@ class VLMap(Map):
                 self.base_transform,
             )
             self.map_builder.create_mobile_base_map()
+        if self.map_config.pose_info.pose_type == "mobile_base_2":
+            self.map_builder = VLMapBuilder2(
+                self.data_dir,
+                self.map_config,
+                self.pose_path,
+                self.rgb_paths,
+                self.depth_paths,
+                self.base2cam_tf,
+                self.base_transform,
+            )
+            self.map_builder.create_mobile_base_map()
         elif self.map_config.pose_info.pose_type == "camera_base":
             self.map_builder = VLMapBuilderCam(
                 self.data_dir,
@@ -73,6 +85,19 @@ class VLMap(Map):
         self._setup_paths(data_dir)
         print(self.data_dir)
         if self.map_config.pose_info.pose_type == "mobile_base":
+            self.map_save_path = Path(data_dir) / "vlmap" / "vlmaps.h5df"
+            print(self.map_save_path)
+            if not self.map_save_path.exists():
+                assert False, "Loading VLMap failed because the file doesn't exist."
+            (
+                self.mapped_iter_list,
+                self.grid_feat,
+                self.grid_pos,
+                self.weight,
+                self.occupied_ids,
+                self.grid_rgb,
+            ) = load_3d_map(self.map_save_path)
+        if self.map_config.pose_info.pose_type == "mobile_base_2":
             self.map_save_path = Path(data_dir) / "vlmap" / "vlmaps.h5df"
             print(self.map_save_path)
             if not self.map_save_path.exists():
@@ -142,9 +167,9 @@ class VLMap(Map):
             add_other=True,
         )  # score for name and other
         vlmaps_data_dir = self.data_dir
-        save_path = vlmaps_data_dir / "vlmap_cam" / "scores_mat.npy"
-        np.save(save_path, self.scores_mat)
-        print(f"{save_path} is saved.")
+        # save_path = vlmaps_data_dir / "vlmap_cam" / "scores_mat.npy"
+        # np.save(save_path, self.scores_mat)
+        # print(f"{save_path} is saved.")
         return self.scores_mat
 
     def index_map(self, language_desc: str, with_init_cat: bool = True):
@@ -165,7 +190,9 @@ class VLMap(Map):
                 add_other=True,
             )  # score for name and other
             cat_id = 0
-
+        # logging.info(f"self.categories: {self.categories}")
+        # logging.info(f"cat_id: {cat_id}")
+        # logging.info(f"catscores_mat_id: {scores_mat.shape}")
         max_ids = np.argmax(scores_mat, axis=1)
         mask = max_ids == cat_id
         return mask
@@ -265,8 +292,8 @@ class VLMap(Map):
         mask_2d = pool_3d_label_to_2d(pc_mask, self.grid_pos, self.gs)
         mask_2d = mask_2d[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
         # print(f"showing mask for object cat {name}")
-        # cv2.imshow(f"mask_{name}", (mask_2d.astype(np.float32) * 255).astype(np.uint8))
-        # cv2.waitKey()
+        cv2.imshow(f"mask_{name}", (mask_2d.astype(np.float32) * 255).astype(np.uint8))
+        cv2.waitKey()
 
         foreground = binary_closing(mask_2d, iterations=3)
         foreground = gaussian_filter(foreground.astype(float), sigma=0.8, truncate=3)

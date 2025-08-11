@@ -8,10 +8,10 @@ class Navigator:
     def __init__(self):
         pass
 
-    def build_visgraph(self, obstacle_map: np.ndarray, rowmin: float, colmin: float, vis: bool = False):
+    def build_visgraph(self, obstacle_map: np.ndarray, rowmin: float, colmin: float, vis: bool = False, use_internal_contour: bool = False):
         self.obs_map = obstacle_map
         # 根据障碍物地图构建可视化图。
-        self.visgraph = build_visgraph_with_obs_map(obstacle_map, vis=vis)
+        self.visgraph = build_visgraph_with_obs_map(obstacle_map, use_internal_contour, vis=vis)
         self.rowmin = rowmin
         self.colmin = colmin
 
@@ -53,9 +53,9 @@ class Navigator:
         full_map_pos: (row, col) in full map
         Return (row, col) in cropped_map
         """
-        print("full_map_pos: ", full_map_pos)
-        print("self.rowmin: ", self.rowmin)
-        print("self.colmin: ", self.colmin)
+        # print("full_map_pos: ", full_map_pos)
+        # print("self.rowmin: ", self.rowmin)
+        # print("self.colmin: ", self.colmin)
         return [full_map_pos[0] - self.rowmin, full_map_pos[1] - self.colmin]
 
     def _convert_cropped_map_pos_to_full_map_pos(self, cropped_map_pos: Tuple[float, float]) -> Tuple[float, float]:

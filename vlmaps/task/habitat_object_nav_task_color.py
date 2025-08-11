@@ -1,7 +1,7 @@
 from pathlib import Path
 import json
 from typing import Dict, List, Tuple, Union
-
+import logging
 from omegaconf import DictConfig
 import numpy as np
 import habitat_sim
@@ -11,13 +11,20 @@ from vlmaps.task.habitat_task import HabitatTask
 from vlmaps.utils.habitat_utils import agent_state2tf, get_position_floor_objects
 from vlmaps.utils.navigation_utils import get_dist_to_bbox_2d
 from vlmaps.utils.habitat_utils import display_sample
+from vlmaps.robot.habitat_lang_robot import HabitatLanguageRobot
+from vlmaps.map.map import Map
+from vlmaps.utils.mapping_utils import base_pos2grid_id_3d_3
+    
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(filename)s:%(lineno)d] %(message)s'
+)
 
-
-class HabitatObjectNavigationTask(HabitatTask):
+class HabitatObjectNavigationTaskColor(HabitatTask):
     def load_task(self):
         assert hasattr(self, "vlmaps_dataloader"), "Please call setup_scene() first"
 
-        task_path = Path(self.vlmaps_dataloader.data_dir) / "object_navigation_tasks.json"
+        task_path = Path(self.vlmaps_dataloader.data_dir) / "object_navigation_tasks_color.json"
         with open(task_path, "r") as f:
             self.task_dict = json.load(f)
 
@@ -51,14 +58,14 @@ class HabitatObjectNavigationTask(HabitatTask):
         try:
             return [x for x in self.same_floor_objects_list if x.category.name() == class_name]
         except NameError:
-            print("Call get_all_objects() before calling get_class_objects()")
+            logging.error("Call get_all_objects() before calling get_class_objects()")
             raise
 
     def find_closest_object_from_class(self, class_name: str, pos_hab: np.array):
         """
         pos_hab: 3d position in habitat world frame
         """
-        print("class name: ", class_name)
+        logging.info(f"class name: {class_name}")
         class_objects = self.get_class_objects(class_name)
         dists_list = []
         for object in class_objects:
@@ -77,7 +84,7 @@ class HabitatObjectNavigationTask(HabitatTask):
         # currently, we only check if the agent has called stop aciton for all subgoals
         return self.curr_subgoal_id == self.n_subgoals_in_task
 
-    def test_step(self, sim: habitat_sim.Simulator, action: str, agent_position: np.array = None, vis: bool = False):
+    def test_step(self, sim: habitat_sim.Simulator, robot: HabitatLanguageRobot, action: str, agent_position: np.array = None, vis: bool = False):
         self.actions.append(action)
         if action == "stop":
             if agent_position is None:
@@ -86,13 +93,14 @@ class HabitatObjectNavigationTask(HabitatTask):
                 agent_position = agent_state.position
             next_subgoal_name = self.goal_classes[self.curr_subgoal_id]
             self.get_all_objects(sim)
-            closest_object, closest_dist = self.find_closest_object_from_class(next_subgoal_name, agent_position)
+            # closest_object, closest_dist = self.find_closest_object_from_class(next_subgoal_name, agent_position)
+            closest_object, closest_dist = self.find_and_visualize_closest_object(robot, next_subgoal_name, agent_position, True)
             self.distance_to_subgoals.append(closest_dist)
             if closest_dist < self.config.nav.valid_range:
                 self.finished_subgoals.append(self.curr_subgoal_id)
-                print(f"###({self.curr_subgoal_id + 1}/{4}) {next_subgoal_name} reached! Distance: {closest_dist}m.###")
+                logging.info(f"###({self.curr_subgoal_id + 1}/{4}) {next_subgoal_name} reached! Distance: {closest_dist}m.###")
             else:
-                print(f"###({self.curr_subgoal_id + 1}/{4}) {next_subgoal_name} unreached! Distance: {closest_dist}m.###")
+                logging.info(f"###({self.curr_subgoal_id + 1}/{4}) {next_subgoal_name} unreached! Distance: {closest_dist}m.###")
 
             self.curr_subgoal_id += 1
             
@@ -138,3 +146,68 @@ class HabitatObjectNavigationTask(HabitatTask):
         results_dict["actions"] = self.actions
         with open(save_path, "w") as f:
             json.dump(results_dict, f, indent=4)
+    def find_and_visualize_closest_object(self, robot: HabitatLanguageRobot, class_name: str, pos_hab: np.ndarray, vis: bool = False):
+        closest_obj, closest_dist = self.find_closest_object_from_class(class_name, pos_hab)
+        obj_pos = closest_obj.aabb.center  # 3D 世界坐标
+        map = robot.map
+        # 转换为 2D 网格坐标
+        row, col = self.world_to_grid(robot, obj_pos)
+        logging.info(f"Object 3D position: {obj_pos}, Grid (row, col): ({row}, {col})")
+
+        # 转换为裁剪图像坐标
+        row_local = row - map.rmin
+        col_local = col - map.cmin
+        logging.info(f"Local (row, col): ({row_local}, {col_local})")
+
+        # 可视化
+        if vis:
+            obs_map = map.get_customized_obstacle_cropped()
+            if obs_map is None or obs_map.size == 0:
+                logging.info("Error: obs_map is empty or invalid!")
+                return
+            # 创建三通道 BGR 图像
+            obs_map_vis = (obs_map * 255).astype(np.uint8)
+            obs_map_vis = np.stack([obs_map_vis] * 3, axis=-1)
+
+            # 绘制物体中心点（红色）
+            cv2.circle(
+                obs_map_vis,
+                (col_local, row_local),
+                radius=5,
+                color=(0, 0, 255),
+                thickness=-1
+            )
+
+            # 保存图像以供调试
+            # cv2.imwrite("debug_output.png", obs_map_vis)
+
+            # 显示最终图像
+            cv2.imshow("Closest Object Visualization", obs_map_vis)
+            # cv2.waitKey()
+
+        return closest_obj, closest_dist
+    def world_to_grid(self, robot: HabitatLanguageRobot, pos_3d: np.ndarray) -> Tuple[int, int]:
+        """
+        Convert Habitat world position to cropped grid coordinates (row, col)
+        using the same transformation as `_get_full_map_pose`.
+        """
+        vlmaps_dataloader = robot.vlmaps_dataloader
+        map = robot.map
+        # Step 1: 构造 Habitat 世界坐标对应的变换矩阵
+        tf_hab = self._pos3d_to_tf(pos_3d)
+
+        # Step 2: 应用变换对齐坐标系
+        tf = vlmaps_dataloader.inv_init_base_tf @ vlmaps_dataloader.base_transform @ tf_hab @ np.linalg.inv(vlmaps_dataloader.base_transform)
+
+        # Step 3: 提取全局地图坐标 (x, y)
+        x, y, _ = tf[:3, 3]
+
+        # Step 4: 转换为网格坐标 (row, col)
+        row, col = base_pos2grid_id_3d_3(map.gs, map.cs, x, y, 0)
+
+        return row, col
+    def _pos3d_to_tf(self, pos_3d: np.ndarray) -> np.ndarray:
+        """Convert 3D position to 4x4 transformation matrix (identity rotation)"""
+        tf = np.eye(4)
+        tf[:3, 3] = pos_3d
+        return tf

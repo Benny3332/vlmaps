@@ -43,6 +43,11 @@ def visualize_masked_map_3d(pc: np.ndarray, mask: np.ndarray, rgb: np.ndarray, t
 
 
 def visualize_heatmap_3d(pc: np.ndarray, heatmap: np.ndarray, rgb: np.ndarray, transparency: float = 0.5):
+    grid_height = pc[:, 2] * 0.05
+    grid_height_mask = np.logical_and(grid_height > -1.55, grid_height < 5.0)
+    pc = pc[grid_height_mask, :]
+    rgb = rgb[grid_height_mask, :]
+    heatmap = heatmap[grid_height_mask]
     sim_new = (heatmap * 255).astype(np.uint8)
     heat = cv2.applyColorMap(sim_new, cv2.COLORMAP_JET)
     heat = heat.reshape(-1, 3)[:, ::-1].astype(np.float32)

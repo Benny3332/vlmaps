@@ -94,7 +94,8 @@ class HabitatLanguageRobot(LangRobot):
             cropped_obst_map,
             self.vlmaps_dataloader.rmin,
             self.vlmaps_dataloader.cmin,
-            vis=self.config["nav"]["vis"],
+            vis=self.config["nav"]["vis2"],
+            use_internal_contour = self.config["nav"]["use_internal_contour"]
         )
 
         # self._setup_localizer(vlmaps_data_dir)
@@ -125,6 +126,8 @@ class HabitatLanguageRobot(LangRobot):
         }
         # 根据sim_setting生成配置对象
         cfg = make_cfg(self.sim_setting)
+        cfg.sim_cfg.frustum_culling = True
+        cfg.sim_cfg.enable_gfx_replay_save = True
         # 创建sim实例
         # 如果sim实例不存在，或者当前场景名称与上次不同，则创建新的sim实例
         if self.sim is None or scene_name != self.last_scene_name:
@@ -443,10 +446,11 @@ class HabitatLanguageRobot(LangRobot):
         # while not success:
         self._set_nav_curr_pose()
         curr_pose_on_full_map = self.get_agent_pose_on_map()  # (row, col, angle_deg) on full map
+        # print(f"self.config[\"nav\"][\"vis\"] : {self.config['nav']['vis']}")
         paths = self.nav.plan_to(
             curr_pose_on_full_map[:2], pos, vis=self.config["nav"]["vis"]
         )  # take (row, col) in full map
-        print(paths)
+        # print(paths)
         actions_list, poses_list = self.controller.convert_paths_to_actions(curr_pose_on_full_map, paths[1:])
         success, real_actions_list = self.execute_actions(actions_list, poses_list, vis=self.config["nav"]["vis"])
         actual_actions_list.extend(real_actions_list)
@@ -545,7 +549,7 @@ class HabitatLanguageRobot(LangRobot):
         row, col, angle_deg = self.vlmaps_dataloader.to_full_map_pose()
         self.curr_pos_on_map = (row, col)
         self.curr_ang_deg_on_map = angle_deg
-        print("set curr pose: ", row, col, angle_deg)
+        # print("set curr pose: ", row, col, angle_deg)
 
     def _get_full_map_pose(self) -> Tuple[float, float, float]:
         agent_state = self.sim.get_agent(0).get_state()

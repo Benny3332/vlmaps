@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import openai
+import httpx
 from vlmaps.utils.clip_utils import get_text_feats, multiple_templates
 
 
@@ -36,12 +37,12 @@ def find_similar_category_id(class_name, classes_list):
         return classes_list.index(class_name)
     import openai
 
-    openai_key = os.environ["OPENAI_KEY"]
+    openai_key = os.environ["DASHSCOPE_API_KEY"]
     openai.api_key = openai_key
     classes_list_str = ",".join(classes_list)
-    client = openai.OpenAI(api_key=openai_key,base_url='https://api.gptsapi.net/v1')
+    client = openai.OpenAI(api_key=openai_key, base_url='https://dashscope.aliyuncs.com/compatible-mode/v1', http_client=httpx.Client(trust_env=False))
     response = client.chat.completions.create(
-        model="gpt-4-turbo",
+        model="qwen-turbo",
         messages=[
             {
                 "role": "user",

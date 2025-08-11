@@ -367,6 +367,17 @@ def base_pos2grid_id_3d(gs, cs, x_base, y_base, z_base):
     h = int(z_base / cs)
     return [row, col, h]
 
+def base_pos2grid_id_3d_2(gs, cs, min_z,x_base, y_base, z_base):
+    row = int(gs / 2 - int(x_base / cs))
+    col = int(gs / 2 - int(y_base / cs))
+    relative_z = z_base - min_z
+    h = int(relative_z / cs)
+    return [row, col, h]
+
+def base_pos2grid_id_3d_3(gs, cs, x_base, y_base, z_base):
+    row = int(gs / 2 - int(x_base / cs))
+    col = int(gs / 2 - int(y_base / cs))
+    return [row, col]
 
 def base_pos2grid_id_3d_batch(gs, cs, pos_base_np):
     """

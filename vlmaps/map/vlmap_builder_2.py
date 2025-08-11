@@ -10,16 +10,14 @@ from omegaconf import DictConfig
 import torch
 import gdown
 import open3d as o3d
-
+import h5py
 from vlmaps.utils.lseg_utils import get_lseg_feat
 from vlmaps.utils.mapping_utils import (
-    load_3d_map,
-    save_3d_map,
     cvt_pose_vec2tf,
     load_depth_npy,
     depth2pc,
     transform_pc,
-    base_pos2grid_id_3d,
+    base_pos2grid_id_3d_2,
     project_point,
     get_sim_cam_mat,
 )
@@ -32,7 +30,7 @@ def visualize_pc(pc: np.ndarray):
     o3d.visualization.draw_geometries([pcd])
 
 
-class VLMapBuilder:
+class VLMapBuilder2:
     def __init__(
         self,
         data_dir: Path,
@@ -51,6 +49,8 @@ class VLMapBuilder:
         self.base2cam_tf = base2cam_tf
         self.base_transform = base_transform
         self.rot_type = map_config.pose_info.rot_type
+        self.pcd_min = None
+        self.pcd_max = None
 
     def create_mobile_base_map(self):
         """
@@ -90,7 +90,11 @@ class VLMapBuilder:
         # 初始化lseg模型
         # init lseg model
         lseg_model, lseg_transform, crop_size, base_size, norm_mean, norm_std = self._init_lseg()
+        # 加载相机校准矩阵
+        # load camera calib matrix in config
+        calib_mat = np.array(self.map_config.cam_calib_mat).reshape((3, 3))
 
+        self._precompute_global_pointcloud_range(calib_mat, depth_sample_rate)
         # 初始化地图
         # init the map
         (
@@ -102,11 +106,9 @@ class VLMapBuilder:
             grid_rgb,
             mapped_iter_set,
             max_id,
-        ) = self._init_map(camera_height, cs, gs, self.map_save_path)
+        ) = self._init_map(self.pcd_min, self.pcd_max, cs, gs, self.map_save_path)
 
-        # 加载相机校准矩阵
-        # load camera calib matrix in config
-        calib_mat = np.array(self.map_config.cam_calib_mat).reshape((3, 3))
+        
 
         # 初始化空白地图和高度图
         cv_map = np.zeros((gs, gs, 3), dtype=np.uint8)
@@ -143,19 +145,19 @@ class VLMapBuilder:
 
             # 反投影深度点云
             # backproject depth point cloud
-            pc = self._backproject_depth(depth, calib_mat, depth_sample_rate, min_depth=0.1, max_depth=6)
+            pc = self._backproject_depth(depth, calib_mat, depth_sample_rate, min_depth=0.1, max_depth=5)
 
             # 将点云转换到全局坐标系（初始基准坐标系）
             # transform the point cloud to global frame (init base frame)
             # pc_transform = self.inv_init_base_tf @ self.base_transform @ habitat_base_pose @ self.base2cam_tf
             pc_transform = tf @ self.base_transform @ self.base2cam_tf
             pc_global = transform_pc(pc, pc_transform)  # (3, N)
-            
             for i, (p, p_local) in enumerate(zip(pc_global.T, pc.T)):
                 # 计算点在网格中的行列号和高度
-                row, col, height = base_pos2grid_id_3d(gs, cs, p[0], p[1], p[2])
+                row, col, height = base_pos2grid_id_3d_2(gs, cs, self.pcd_min[2], p[0], p[1], p[2])
                 # 如果点超出网格范围，则跳过
                 if self._out_of_range(row, col, height, gs, vh):
+                    print(f"_out_of_range : {row}, {col}, {height}")
                     continue
 
                 # 将点投影到图像坐标系和像素对齐的特征坐标系
@@ -220,14 +222,52 @@ class VLMapBuilder:
                 # 每处理100帧，临时保存特征，并输出提示信息
                 print(f"Temporarily saving {max_id} features at iter {frame_i}...")
                 self._save_3d_map(grid_feat, grid_pos, weight, grid_rgb, occupied_ids, mapped_iter_set, max_id)
-                pcd = o3d.geometry.PointCloud()
-                pcd.points = o3d.utility.Vector3dVector(grid_pos)
-                pcd.colors = o3d.utility.Vector3dVector(rgb)
-                o3d.visualization.draw_geometries([pcd])
 
         # 处理完所有帧后，保存最终的3D地图
         self._save_3d_map(grid_feat, grid_pos, weight, grid_rgb, occupied_ids, mapped_iter_set, max_id)
+        rgb = grid_rgb / 255.0
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(grid_pos)
+        pcd.colors = o3d.utility.Vector3dVector(rgb)
+        o3d.visualization.draw_geometries([pcd])
 
+
+    def _precompute_global_pointcloud_range(self, calib_mat, depth_sample_rate):
+        """
+        预先计算全局点云的范围
+        """
+        print("Precomputing global point cloud range...")
+        # global_pcd = o3d.geometry.PointCloud()
+        pbar = tqdm(zip(self.depth_paths, self.base_poses), total=len(self.depth_paths))
+        min_vals = np.full(3, np.inf)
+        max_vals = np.full(3, -np.inf)
+        for depth_path, base_posevec in pbar:
+            # 加载深度数据
+            depth = load_depth_npy(depth_path)
+            
+            # 反投影深度点云
+            pc = self._backproject_depth(depth, calib_mat, depth_sample_rate, min_depth=0.1, max_depth=5)
+            if pc.size == 0:
+                print(f"警告：深度路径 {depth_path} 生成了空点云！")
+                continue
+            # 转换到全局坐标系
+            if self.rot_type == "quat":
+                habitat_base_pose = cvt_pose_vec2tf(base_posevec)
+            elif self.rot_type == "mat":
+                habitat_base_pose = base_posevec.reshape((4, 4))
+            base_pose = self.base_transform @ habitat_base_pose @ np.linalg.inv(self.base_transform)
+            tf = self.inv_init_base_tf @ base_pose
+            pc_transform = tf @ self.base_transform @ self.base2cam_tf
+            pc_global = transform_pc(pc, pc_transform)
+            
+            min_vals = np.minimum(min_vals, pc_global.min(axis=1))
+            max_vals = np.maximum(max_vals, pc_global.max(axis=1))
+        
+        # 计算点云范围
+        self.pcd_min = min_vals
+        self.pcd_max = max_vals
+        
+        print(f"Global point cloud range: min={self.pcd_min}, max={self.pcd_max}")
     def create_camera_map(self):
         """
         TODO: To be implemented
@@ -236,13 +276,14 @@ class VLMapBuilder:
         """
         return NotImplementedError
 
-    def _init_map(self, map_height: float, cs: float, gs: int, map_path: Path) -> Tuple:
+    def _init_map(self, pcd_min: np.ndarray, pcd_max: np.ndarray, cs: float, gs: int, map_path: Path) -> Tuple:
         """
         initialize a voxel grid of size (gs, gs, vh), vh = map_height / cs, each voxel is of
         size cs
         """
         # init the map related variables
-        vh = int(map_height / cs)
+        height_range = pcd_max[2] - pcd_min[2]
+        vh = int(height_range / cs) + 1
         grid_feat = np.zeros((gs * gs, self.clip_feat_dim), dtype=np.float32)
         grid_pos = np.zeros((gs * gs, 3), dtype=np.int32)
         occupied_ids = -1 * np.ones((gs, gs, vh), dtype=np.int32)
@@ -261,9 +302,14 @@ class VLMapBuilder:
                 weight,
                 occupied_ids,
                 grid_rgb,
-            ) = load_3d_map(self.map_save_path)
+                pcd_min,
+                pcd_max
+            ) = self._load_3d_map(self.map_save_path)
             mapped_iter_set = set(mapped_iter_list)
             max_id = grid_feat.shape[0]
+            self.pcd_min = pcd_min
+            self.pcd_max = pcd_max
+            vh = occupied_ids.shape[2] 
 
         return vh, grid_feat, grid_pos, weight, occupied_ids, grid_rgb, mapped_iter_set, max_id
 
@@ -271,7 +317,7 @@ class VLMapBuilder:
         crop_size = 480  # 480
         base_size = 520  # 520
         if torch.cuda.is_available():
-            self.device = "cuda:0"
+            self.device = "cuda:1"
         elif torch.backends.mps.is_available():
             self.device = "mps"
         else:
@@ -353,7 +399,17 @@ class VLMapBuilder:
             axis=0,
         )
         return grid_feat, grid_pos, weight, grid_rgb
-
+    def _load_3d_map(self, map_path):
+        with h5py.File(map_path, "r") as f:
+            mapped_iter_list = f["mapped_iter_list"][:].tolist()
+            grid_feat = f["grid_feat"][:]
+            grid_pos = f["grid_pos"][:]
+            weight = f["weight"][:]
+            occupied_ids = f["occupied_ids"][:]
+            grid_rgb = f["grid_rgb"][:]
+            pcd_min = f["pcd_min"][:]
+            pcd_max = f["pcd_max"][:]
+            return mapped_iter_list, grid_feat, grid_pos, weight, occupied_ids, grid_rgb, pcd_min, pcd_max
     def _save_3d_map(
         self,
         grid_feat: np.ndarray,
@@ -368,4 +424,12 @@ class VLMapBuilder:
         grid_pos = grid_pos[:max_id]
         weight = weight[:max_id]
         grid_rgb = grid_rgb[:max_id]
-        save_3d_map(self.map_save_path, grid_feat, grid_pos, weight, occupied_ids, list(mapped_iter_set), grid_rgb)
+        with h5py.File(self.map_save_path, "w") as f:
+            f.create_dataset("mapped_iter_list", data=np.array(list(mapped_iter_set), dtype=np.int32))
+            f.create_dataset("grid_feat", data=grid_feat)
+            f.create_dataset("grid_pos", data=grid_pos)
+            f.create_dataset("weight", data=weight)
+            f.create_dataset("occupied_ids", data=occupied_ids)
+            f.create_dataset("grid_rgb", data=grid_rgb)
+            f.create_dataset("pcd_min", data=self.pcd_min)
+            f.create_dataset("pcd_max", data=self.pcd_max)

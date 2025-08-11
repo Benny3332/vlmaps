@@ -1,9 +1,9 @@
 map_type: "vlmap" # "vlmap", "gt", "clip", "clip_gradcam", "vlmaps_lseg_3d"
 pose_info:
-  pose_type: camera_base # mobile_base, camera_base
+  pose_type: mobile_base_2 # mobile_base, camera_base
   rot_type: "quat" # "mat", or "quat" (x, y, z, w)
   # if pose_type is camera, the following parameters are ignored
-  camera_height: 0.5
+  camera_height: 1.5
   base2cam_rot: [1, 0, 0, 0, -1, 0, 0, 0, -1]
   base_forward_axis: [0, 0, -1]
   base_left_axis: [-1, 0, 0]
@@ -12,7 +12,8 @@ skip_frame: 2
 #realsence depth
 #cam_calib_mat: [425.571807861328, 0, 425.977661132812, 0, 425.571807861328, 241.062408447266, 0, 0, 1]
 #realsense rgb
-cam_calib_mat: [604.545959472656, 0, 432.69287109375, 0, 604.094177246094, 254.289428710938, 0, 0, 1]
+# cam_calib_mat: [604.545959472656, 0, 432.69287109375, 0, 604.094177246094, 254.289428710938, 0, 0, 1]
+cam_calib_mat: [540, 0, 540, 0, 540, 360, 0, 0, 1]
 grid_size: ${params.gs}
 cell_size: ${params.cs}
 depth_sample_rate: 100
@@ -20,16 +21,13 @@ dilate_iter: 3
 gaussian_sigma: 1.0
 customize_obstacle_map: False
 potential_obstacle_names:
-  - "officeChair"
   - "chair"
   - "wall"
+  - "wall above the door"
   - "table"
   - "window"
   - "floor"
-  - "ceiling"
   - "stairs"
-  - "light gray floor"
-  - "door"
   - "other"
 obstacle_names:
   - "wall"
@@ -39,4 +37,4 @@ obstacle_names:
   - "stairs"
   - "other"
 categories: "mp3d" # "mp3d", "ai2thor"
-vis: True
+vis: False

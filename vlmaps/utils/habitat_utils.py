@@ -57,6 +57,7 @@ def make_cfg(settings: Dict) -> habitat_sim.Configuration:
         sensor_spec.append(semantic_sensor_spec)
 
     agent_cfg = habitat_sim.agent.AgentConfiguration()
+    agent_cfg.height = 1.4
     agent_cfg.sensor_specifications = sensor_spec
     agent_cfg.action_space = {
         "move_forward": habitat_sim.agent.ActionSpec(

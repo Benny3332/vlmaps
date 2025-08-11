@@ -15,8 +15,8 @@ from vlmaps.utils.visualize_utils import (
     get_heatmap_from_mask_2d,
     get_heatmap_from_mask_3d,
 )
-from pycallgraph import PyCallGraph
-from pycallgraph.output import GraphvizOutput
+# from pycallgraph import PyCallGraph
+# from pycallgraph.output import GraphvizOutput
 
 @hydra.main(
     version_base=None,
@@ -31,12 +31,12 @@ def main(config: DictConfig) -> None:
     vlmap.load_map(data_dirs[config.scene_id])
     visualize_rgb_map_3d(vlmap.grid_pos, vlmap.grid_rgb)
     # cat = input("What is your interested category in this scene?")
-    cat = "officeChair"
+    cat = "stairs"
     vlmap._init_clip()
     print("considering categories: ")
-    print(gml4cat[1:-1])
+    print(mp3dcat[1:-1])
     if config.init_categories:
-        vlmap.init_categories(gml4cat[1:-1])
+        vlmap.init_categories(mp3dcat[1:-1])
         mask = vlmap.index_map(cat, with_init_cat=True)
     else:
         mask = vlmap.index_map(cat, with_init_cat=False)
@@ -57,8 +57,8 @@ def main(config: DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    graphviz = GraphvizOutput()
-    graphviz.output_file = 'create_map.png'
+    # graphviz = GraphvizOutput()
+    # graphviz.output_file = 'create_map.png'
 
-    with PyCallGraph(output=graphviz):
-        main()
+    # with PyCallGraph(output=graphviz):
+    main()

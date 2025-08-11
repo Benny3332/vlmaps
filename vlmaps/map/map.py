@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
-
+import logging
 import cv2
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
@@ -181,27 +181,57 @@ class Map:
     def get_nearest_pos(self, curr_pos: List[float], name: str, vis: bool = False) -> List[float]:
         # 获取目标位置信息
         contours, centers, bbox_list = self.get_pos(name)
+        logging.debug(f"contours: {len(contours)}")
         # 过滤掉面积小于阈值的物体
         ids_list = self.filter_small_objects(bbox_list, area_thres=10)
+        logging.debug(f"ids_list: {len(ids_list)}")
         # 根据过滤后的id列表，重新整理contours、centers和bbox_list
         contours = [contours[i] for i in ids_list]
         centers = [centers[i] for i in ids_list]
         bbox_list = [bbox_list[i] for i in ids_list]
         # 如果没有符合条件的物体，则返回当前位置
         if len(centers) == 0:
+            logging.warning("没有符合条件的物体")
             return curr_pos
         # 选择最近的物体
         id = self.select_nearest_obj(centers, bbox_list, curr_pos)
         # 显示选中物体的轮廓
         if vis:
-            obs_map_vis = (self.get_customized_obstacle_cropped()[:, :, None] * 255).astype(np.uint8)
-            obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
-            cv2.imshow("aim object list", obs_map_vis)
-            cv2.waitKey()
+            # 获取障碍物地图
+            obs_map = self.get_customized_obstacle_cropped()
+            if obs_map is None or obs_map.size == 0:
+                print("Error: obs_map is empty or invalid!")
+                return curr_pos
+            # 创建三通道 BGR 图像
+            obs_map_vis = (obs_map * 255).astype(np.uint8)
+            obs_map_vis = np.stack([obs_map_vis] * 3, axis=-1)
+
+            # 绘制选中轮廓
             contour = contours[id]
-            contour_cv2 = contour[:, [1, 0]]
-            cv2.drawContours(obs_map_vis, [contour_cv2], 0, (0, 255, 0), 3)
-            cv2.imshow("aim object list", obs_map_vis)
+            contour_cv2 = contour[:, [1, 0]]  # [row, col] → [col, row]
+            # 将全图坐标转换为裁剪图像坐标
+            contour_cv2[:, 0] -= self.cmin  # col - cmin
+            contour_cv2[:, 1] -= self.rmin  # row - rmin
+            cv2.drawContours(obs_map_vis, [contour_cv2], 0, (0, 255, 0), 3)  # 绿色轮廓
+
+            # 绘制选中物体的中心点（红点）
+            selected_center = centers[id]
+            center_col = int(selected_center[1]) - self.cmin  # col - cmin
+            center_row = int(selected_center[0]) - self.rmin  # row - rmin
+            cv2.circle(
+                obs_map_vis,
+                (center_col, center_row),
+                radius=5,
+                color=(0, 0, 255),
+                thickness=-1
+            )
+
+            # 保存图像以供调试
+            # cv2.imwrite("debug_output.png", obs_map_vis)
+            print(f"######nav object name : {name} #######")
+            # 显示最终图像
+            cv2.imshow("Selected Contour and Center", obs_map_vis)
+            cv2.waitKey(1)  # 确保窗口刷新
             cv2.waitKey()
         # 返回当前位置到目标物体轮廓上的最近点
         return self.nearest_point_on_polygon(curr_pos, contours[id])
@@ -256,7 +286,7 @@ class Map:
         # id = np.argmax(dist_list)
         dist_array = np.array(dist_list)
         sorted_indices = np.argsort(dist_array)
-        second_farthest_index = sorted_indices[-1]
+        second_farthest_index = sorted_indices[0]
 
         return second_farthest_index
 
@@ -363,7 +393,7 @@ class Map:
                 or (theta > pi_2 and center_angle < -pi_2 and np.abs(2 * np.pi - theta + center_angle) < fov_rad_2)
                 or (theta < -pi_2 and center_angle > pi_2 and np.abs(2 * np.pi - center_angle + theta) < fov_rad_2)
             ):
-                print(theta, center_angle, fov_rad_2)
+                print(f"select_front_objs: {theta}, {center_angle}, {fov_rad_2}")
                 ids_list.append(c_i)
 
         return ids_list

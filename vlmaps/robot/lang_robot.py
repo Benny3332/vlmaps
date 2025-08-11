@@ -177,7 +177,7 @@ class LangRobot:
 
     def move_to_object(self, name: str, vis: bool = False):
         self._set_nav_curr_pose()
-        pos = self.map.get_nearest_pos(self.curr_pos_on_map, name)
+        pos = self.map.get_nearest_pos(self.curr_pos_on_map, name, vis)
         self.move_to(pos)
 
     def move_forward(self, meters: float):

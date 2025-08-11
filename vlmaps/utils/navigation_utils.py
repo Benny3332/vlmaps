@@ -78,31 +78,24 @@ def build_visgraph_with_obs_map(obs_map, use_internal_contour=False, internal_po
     # 将障碍物地图转换为可视化图像
     obs_map_vis = (obs_map[:, :, None] * 255).astype(np.uint8)
     obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
-    # 如果开启可视化，则显示障碍物地图
+
+    # 如果开启可视化，则显示障碍物地图（可选）
     if vis:
         cv2.imshow("obs", obs_map_vis)
-        cv2.waitKey()
 
     # 获取障碍物地图中的轮廓、中心点、边界框和层次结构
     contours_list, centers_list, bbox_list, hierarchy = get_segment_islands_pos(
         obs_map, 0, detect_internal_contours=use_internal_contour
     )
-    # TODO:
-    # 如果需要检测内部轮廓
+
     if use_internal_contour:
-        # 查找内部点在哪些轮廓内
         ids = point_in_contours(obs_map, contours_list, internal_point)
-        # 断言内部点必须在两个轮廓内
         assert len(ids) == 2, f"The internal point is not in 2 contours, but {len(ids)}"
-        # 找到两个轮廓之间最近的点
         point_a, point_b = find_closest_points_between_two_contours(
             obs_map, contours_list[ids[0]], contours_list[ids[1]]
         )
-        # 在障碍物地图上绘制连线
         obs_map = cv2.line((obs_map * 255).astype(np.uint8), (point_a[1], point_a[0]), (point_b[1], point_b[0]), 255, 5)
-        # 更新障碍物地图
         obs_map = obs_map == 255
-        # 重新获取轮廓、中心点、边界框和层次结构
         contours_list, centers_list, bbox_list, hierarchy = get_segment_islands_pos(
             obs_map, 0, detect_internal_contours=False
         )
@@ -111,30 +104,25 @@ def build_visgraph_with_obs_map(obs_map, use_internal_contour=False, internal_po
 
     # 遍历所有轮廓
     for contour in contours_list:
-        # 如果开启可视化，则绘制轮廓
+        # 如果开启可视化，则绘制轮廓（不再调用 cv2.imshow 和 cv2.waitKey）
         if vis:
             contour_cv2 = contour[:, [1, 0]]
             cv2.drawContours(obs_map_vis, [contour_cv2], 0, (0, 255, 0), 3)
-            cv2.imshow("obs", obs_map_vis)
-        # 提取轮廓点
+
+    # 在所有轮廓绘制完成后，统一显示
+    if vis:
+        cv2.imshow("obs", obs_map_vis)
+        cv2.waitKey()  # 只等待一次，显示所有轮廓
+
+    # 提取轮廓点并构建 VisGraph
+    for contour in contours_list:
         contour_pos = []
         for [row, col] in contour:
             contour_pos.append(vg.Point(row, col))
-        # 将轮廓点添加到多边形列表中
         poly_list.append(contour_pos)
-        # 提取轮廓点的x和z坐标
-        xlist = [x.x for x in contour_pos]
-        zlist = [x.y for x in contour_pos]
-        # 如果开启可视化，则绘制轮廓点的x和z坐标曲线
-        if vis:
-            # plt.plot(xlist, zlist)
 
-            cv2.waitKey()
-    # 创建可视化图
     g = vg.VisGraph()
-    # 构建可视化图
     g.build(poly_list, workers=4)
-    # 返回可视化图
     return g
 
 
@@ -153,8 +141,8 @@ def plan_to_pos_v2(start, goal, obstacles, G: vg.VisGraph = None, vis=False):
     Start and goal are tuples of (row, col) in the map.
     """
 
-    print("start: ", start)
-    print("goal: ", goal)
+    # print("start: ", start)
+    # print("goal: ", goal)
     if vis:
         obs_map_vis = (obstacles[:, :, None] * 255).astype(np.uint8)
         obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
@@ -190,7 +178,7 @@ def plan_to_pos_v2(start, goal, obstacles, G: vg.VisGraph = None, vis=False):
     for point in path_vg:
         subgoal = [point.x, point.y]
         path.append(subgoal)
-    print(path)
+    # print(path)
 
     # check the final goal is not in obstacles
     # if obstacles[int(goal[0]), int(goal[1])] == 0:
@@ -202,7 +190,7 @@ def plan_to_pos_v2(start, goal, obstacles, G: vg.VisGraph = None, vis=False):
 
         for i, point in enumerate(path):
             subgoal = (int(point[1]), int(point[0]))
-            print(i, subgoal)
+            # print(i, subgoal)
             obs_map_vis = cv2.circle(obs_map_vis, subgoal, 5, (255, 0, 0), -1)
             if i > 0:
                 cv2.line(obs_map_vis, last_subgoal, subgoal, (255, 0, 0), 2)

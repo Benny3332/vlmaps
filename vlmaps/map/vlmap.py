@@ -334,7 +334,7 @@ class VLMap(Map):
         cv2.imshow(f"mask_{name}", (mask_2d.astype(np.float32) * 255).astype(np.uint8))
         cv2.waitKey()
         # 创建彩色mask图像（裁剪区域大小）
-        color_mask = np.zeros((mask_2d.shape[0], mask_2d.shape[1], 3), dtype=np.uint8)
+        color_mask = np.zeros((mask_2d.shape[1], mask_2d.shape[0], 3), dtype=np.uint8)
         
         foreground = binary_closing(mask_2d, iterations=3)
         foreground = gaussian_filter(foreground.astype(float), sigma=0.8, truncate=3)
@@ -382,6 +382,12 @@ class VLMap(Map):
             # 计算颜色分布
             color_dist = {}
             if obj_indices:
+
+                # mask = np.zeros(len(self.grid_pos), dtype=bool)
+                # mask[obj_indices] = True
+                # from vlmaps.utils.visualize_utils import visualize_masked_map_3d
+                # visualize_masked_map_3d(self.grid_pos, mask, self.grid_rgb)
+
                 obj_colors = self.grid_rgb[obj_indices]
                 n_points = len(obj_colors)
                 
@@ -425,7 +431,8 @@ class VLMap(Map):
             color_distributions.append(color_dist)
             
             # 使用主色填充物体区域（裁剪区域内坐标）
-            cv2.drawContours(color_mask, [contours[i].astype(np.int32)], -1, main_color, thickness=cv2.FILLED)
+            bgr_color = (main_color[2], main_color[1], main_color[0])
+            cv2.drawContours(color_mask, [contours[i].astype(np.int32)], -1, bgr_color, thickness=cv2.FILLED)
             
             # 转换坐标到全局地图（与原始代码保持一致）
             centers[i][0] += self.rmin
@@ -457,7 +464,7 @@ class VLMap(Map):
             combined_mask_display = combined_mask.transpose(1, 0, 2)
             # 显示彩色mask
             logging.debug(f"color_mask_name: {name}")
-            cv2.imshow(f"color_mask_{name}", combined_mask_display)
+            cv2.imshow(f"color_mask", combined_mask_display)
             cv2.waitKey() 
 
         return contours, centers, bbox_list, color_distributions

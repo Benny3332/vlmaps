@@ -148,6 +148,13 @@ class Map:
         """
         return NotImplementedError
 
+    def get_pos_and_color(self, name: str, vis: bool) -> Tuple[List[List[int]], List[List[float]], List[np.ndarray], List[Dict]]:
+        """
+        Get the contours, centers, and bbox list of a certain category
+        on a full map
+        """
+        return NotImplementedError
+
     def get_distribution_map(self, name: str) -> np.ndarray:
         return NotImplementedError
 
@@ -236,6 +243,86 @@ class Map:
         # 返回当前位置到目标物体轮廓上的最近点
         return self.nearest_point_on_polygon(curr_pos, contours[id])
 
+    def get_nearest_and_similarity_color_pos(
+        self, 
+        curr_pos: List[float], 
+        name: str, 
+        target_colors: List[List[int]],
+        color_weight: float = 0.5,
+        vis: bool = False
+    ) -> List[float]:
+        """
+        Get nearest position considering color information
+        :param curr_pos: Current [row, col] position
+        :param name: Object category name
+        :param target_colors: List of target RGB colors (e.g., [[255,0,0]] or [[255,0,0], [255,255,255]])
+        :param color_weight: Weight of color similarity (0-1)
+        :param vis: Whether to visualize
+        """
+        # 获取目标位置信息和颜色分布
+        contours, centers, bbox_list, color_dists = self.get_pos_and_color(name, vis)
+        
+        # 过滤小物体
+        ids_list = self.filter_small_objects(bbox_list, area_thres=10)
+        contours = [contours[i] for i in ids_list]
+        centers = [centers[i] for i in ids_list]
+        bbox_list = [bbox_list[i] for i in ids_list]
+        color_dists = [color_dists[i] for i in ids_list]
+        
+        if len(centers) == 0:
+            return curr_pos
+        
+        # 计算颜色匹配分数
+        color_scores = np.ones(len(centers))
+        
+        if target_colors:
+            for i, color_dist in enumerate(color_dists):
+                main_colors = color_dist["main_colors"]
+                score = 0.0
+                
+                # 计算每个目标颜色的最佳匹配
+                for target_color in target_colors:
+                    best_match_score = 0.0
+                    for j, color_info in enumerate(main_colors):
+                        # 使用余弦相似度计算颜色匹配度
+                        obj_color = np.array(color_info["color"])
+                        tgt_color = np.array(target_color)
+                        
+                        # 计算余弦相似度
+                        dot_product = np.dot(obj_color, tgt_color)
+                        norm_obj = np.linalg.norm(obj_color)
+                        norm_tgt = np.linalg.norm(tgt_color)
+                        similarity = dot_product / (norm_obj * norm_tgt + 1e-6)
+                        
+                        # 加权相似度（考虑颜色占比）
+                        weighted_similarity = similarity * color_info["proportion"]
+                        
+                        if weighted_similarity > best_match_score:
+                            best_match_score = weighted_similarity
+                    
+                    # 累加每个目标颜色的匹配分数
+                    score += best_match_score
+                
+                # 平均分数
+                color_scores[i] = score / len(target_colors)
+        
+        # 计算距离分数
+        dist_scores = np.zeros(len(centers))
+        for i, center in enumerate(centers):
+            dist = np.sqrt((center[0]-curr_pos[0])**2 + (center[1]-curr_pos[1])**2)
+            dist_scores[i] = 1 / (dist + 1e-6)  # 避免除以零
+        
+        # 归一化分数
+        if np.max(color_scores) > 0:
+            color_scores = color_scores / np.max(color_scores)
+        if np.max(dist_scores) > 0:
+            dist_scores = dist_scores / np.max(dist_scores)
+        
+        # 综合评分 = 颜色匹配分数 * 颜色权重 + 距离分数 * (1 - 颜色权重)
+        combined_scores = (color_scores * color_weight) + (dist_scores * (1 - color_weight))
+        best_id = np.argmax(combined_scores)
+        
+        return self.nearest_point_on_polygon(curr_pos, contours[best_id])
 
     def nearest_point_on_polygon(self, coord: List[float], polygon: List[List[float]]):
         # Create a Shapely Point from the given coordinate

@@ -180,6 +180,12 @@ class LangRobot:
         pos = self.map.get_nearest_pos(self.curr_pos_on_map, name, vis)
         self.move_to(pos)
 
+    def move_to_color_object(self, name: str, vis: bool = False):
+        self._set_nav_curr_pose()
+        color_list = [[0,0,255]]
+        pos = self.map.get_nearest_and_similarity_color_pos(self.curr_pos_on_map, name, color_list, 0.5, vis)
+        self.move_to(pos)
+
     def move_forward(self, meters: float):
         self._set_nav_curr_pose()
         pos = self.map.get_forward_pos(self.curr_pos_on_map, self.curr_ang_deg_on_map, meters)

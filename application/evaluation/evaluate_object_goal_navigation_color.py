@@ -16,7 +16,7 @@ from vlmaps.utils.matterport3d_categories import (mp3dcat, mp3dcat_2)
 )
 def main(config: DictConfig) -> None:
     logging.basicConfig(
-        level=logging.debug,
+        level= logging.DEBUG,
         format='[%(filename)s:%(lineno)d] %(message)s'
         )
     # 设置环境变量，关闭日志输出
@@ -85,7 +85,7 @@ def main(config: DictConfig) -> None:
                 logging.info(f"Navigating to category {cat}")
 
                 # 执行移动到物体的动作
-                actions_list = robot.move_to_object(cat, config.nav.vis)
+                actions_list = robot.move_to_color_object(cat, config.nav.vis2)
 
             # 获取已记录的动作列表
             recorded_actions_list = robot.get_recorded_actions()

@@ -135,7 +135,7 @@ class VLMap(Map):
             print("clip model is already initialized")
             return
         if torch.cuda.is_available():
-            self.device = "cuda:0"
+            self.device = "cuda:1"
         elif torch.backends.mps.is_available():
             self.device = "mps"
         else:
@@ -331,8 +331,9 @@ class VLMap(Map):
         mask_2d = pool_3d_label_to_2d(pc_mask, self.grid_pos, self.gs)
         mask_2d = mask_2d[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
         # mask_2d_index = np.stack(np.where(mask_2d), axis=1)
-        cv2.imshow(f"mask_{name}", (mask_2d.astype(np.float32) * 255).astype(np.uint8))
-        cv2.waitKey()
+        if vis:
+            cv2.imshow(f"mask_{name}", (mask_2d.astype(np.float32) * 255).astype(np.uint8))
+            cv2.waitKey()
         # 创建彩色mask图像（裁剪区域大小）
         color_mask = np.zeros((mask_2d.shape[1], mask_2d.shape[0], 3), dtype=np.uint8)
         

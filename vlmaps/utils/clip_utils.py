@@ -132,7 +132,7 @@ def get_imgs_feats_batch(raw_imgs, preprocess, clip_model, clip_feat_dim, batch_
 
 def get_text_feats(in_text, clip_model, clip_feat_dim, batch_size=64):
     if torch.cuda.is_available():
-        text_tokens = clip.tokenize(in_text).cuda()
+        text_tokens = clip.tokenize(in_text).to("cuda:1")
     elif torch.backends.mps.is_available():
         text_tokens = clip.tokenize(in_text).to("mps")
     text_id = 0

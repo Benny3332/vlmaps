@@ -190,7 +190,7 @@ class Map:
         contours, centers, bbox_list = self.get_pos(name)
         logging.debug(f"contours: {len(contours)}")
         # 过滤掉面积小于阈值的物体
-        ids_list = self.filter_small_objects(bbox_list, area_thres=10)
+        ids_list = self.filter_small_objects(bbox_list, name, area_thres=10)
         logging.debug(f"ids_list: {len(ids_list)}")
         # 根据过滤后的id列表，重新整理contours、centers和bbox_list
         contours = [contours[i] for i in ids_list]
@@ -262,7 +262,7 @@ class Map:
         contours, centers, bbox_list, color_dists = self.get_pos_and_color(name, vis)
         
         # 过滤小物体
-        ids_list = self.filter_small_objects(bbox_list, area_thres=10)
+        ids_list = self.filter_small_objects(bbox_list, name, area_thres=5)
         contours = [contours[i] for i in ids_list]
         centers = [centers[i] for i in ids_list]
         bbox_list = [bbox_list[i] for i in ids_list]
@@ -374,7 +374,7 @@ class Map:
         # 综合评分 = 颜色匹配分数 * 颜色权重 + 距离分数 * (1 - 颜色权重)
         combined_scores = (color_scores * color_weight) + (dist_scores * (1 - color_weight))
         best_id = np.argmax(combined_scores)
-        if True:
+        if vis:
             # 获取障碍物地图
             obs_map = self.get_customized_obstacle_cropped()
             if obs_map is None or obs_map.size == 0:
@@ -437,7 +437,7 @@ class Map:
         new_j = j + pix * np.sin(rad)
         return [new_i, new_j]
 
-    def filter_small_objects(self, bbox_list: List[List[int]], area_thres: int = 50) -> List[int]:
+    def filter_small_objects(self, bbox_list: List[List[int]], name, area_thres: int = 50) -> List[int]:
         results_ids = []
         for bbox_i, bbox in enumerate(bbox_list):
             dx = bbox[1] - bbox[0]
@@ -445,6 +445,8 @@ class Map:
             area = dx * dy
             if area > area_thres:
                 results_ids.append(bbox_i)
+            else:
+                logging.info(f"{name} {bbox_i} is too small : {area}")
         return results_ids
 
     #  TODO: there has some change should be recover

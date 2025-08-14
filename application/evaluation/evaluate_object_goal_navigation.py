@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 import hydra
 import cv2
 
-from vlmaps.task.habitat_object_nav_task import HabitatObjectNavigationTask
+from vlmaps.task.habitat_object_nav_task_color import HabitatObjectNavigationTaskColor
 from vlmaps.robot.habitat_lang_robot import HabitatLanguageRobot
 from vlmaps.utils.llm_utils import parse_object_goal_instruction
 from vlmaps.utils.matterport3d_categories import mp3dcat
@@ -29,7 +29,7 @@ def main(config: DictConfig) -> None:
     robot = HabitatLanguageRobot(config)
 
     # 创建导航任务实例，没有其它操作
-    object_nav_task = HabitatObjectNavigationTask(config)
+    object_nav_task = HabitatObjectNavigationTaskColor(config)
 
     # 重置导航任务的度量指标
     object_nav_task.reset_metrics()
@@ -94,7 +94,7 @@ def main(config: DictConfig) -> None:
             # 遍历已记录的动作列表
             for action in recorded_actions_list:
                 # 执行测试步骤
-                object_nav_task.test_step(robot.sim, action, vis=config.nav.vis2)
+                object_nav_task.test_step(robot.sim, robot, action, vis=config.nav.vis)
 
             # 获取保存目录
             save_dir = robot.vlmaps_dataloader.data_dir / (config.map_config.map_type + "_obj_nav_results")

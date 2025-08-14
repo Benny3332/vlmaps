@@ -465,7 +465,7 @@ class VLMap(Map):
             combined_mask_display = combined_mask.transpose(1, 0, 2)
             # 显示彩色mask
             logging.debug(f"color_mask_name: {name}")
-            cv2.imshow(f"color_mask", combined_mask_display)
+            cv2.imshow(f"color_mask_{name}", combined_mask_display)
             cv2.waitKey() 
 
         return contours, centers, bbox_list, color_distributions

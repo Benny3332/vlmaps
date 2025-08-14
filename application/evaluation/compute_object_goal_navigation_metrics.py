@@ -101,7 +101,7 @@ def compute_metric(data_dir: Union[str, Path], scene_ids: List[int], metric_fold
     config_name="object_goal_navigation_cfg",
 )
 def main(config: DictConfig) -> None:
-    data_dir = Path(config.data_paths.vlmaps_data_dir) / "vlmaps_dataset"
+    data_dir = Path(config.data_paths.vlmaps_data_dir)
     scene_ids = []
     if isinstance(config.scene_id, int):
         scene_ids.append(config.scene_id)

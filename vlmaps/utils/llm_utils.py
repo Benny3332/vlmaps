@@ -1,7 +1,7 @@
 import os
 import openai
 import httpx
-
+import re
 def parse_object_goal_instruction_deprecated(language_instr):
     """
     [deprecated]: only for older version of OpenAI API
@@ -122,7 +122,118 @@ def parse_object_goal_instruction(language_instr):
     text = response.choices[0].message.content
     print(f"GPT analyse result: {text}")
     return [x.strip() for x in text.split(",")]
+    
+def parse_color_object_goal_instruction(language_instr):
+    """
+    Parse language instruction into a series of landmarks with colors, returning two lists:
+    - List of object names
+    - List of lists of RGB values (each object can have one or two colors)
+    
+    The LLM converts ISCC-NBS color names to RGB values based on ISCC-NBS rules.
+    
+    Example input: "First approach the grayish yellowish-brown stairs, then find a nearby light bluish-gray sofa and go there, next come to a very pale purplish-blue picture before finally navigate to a olive-black sink."
+    Example output: 
+    (
+        ["stairs", "sofa", "picture", "sink"],
+        [[[150, 130, 98]], [[176, 191, 195]], [[194, 203, 222]], [[86, 86, 45]]]
+    )
+    """
+    # Initialize OpenAI client
+    openai_key = os.environ["DASHSCOPE_API_KEY"]
+    client = openai.OpenAI(
+        api_key=openai_key,
+        base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
+        http_client=httpx.Client(trust_env=False)
+    )
 
+    # Updated prompt instructing LLM to return objects with RGB values for ISCC-NBS colors
+    response = client.chat.completions.create(
+        model="qwen-turbo",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are an expert in ISCC-NBS color nomenclature. For each object in the instruction, extract the object name and convert any ISCC-NBS color names to their corresponding RGB values ([R,G,B]). Return the result in the format: 'object:[R,G,B]' for one color, or 'object:[R1,G1,B1],[R2,G2,B2]' for two colors. If no color is specified, use 'object:none'. Separate multiple objects with commas. Ensure RGB values are integers between 0 and 255."
+            },
+            {
+                "role": "user",
+                "content": "go to the kitchen and then go to the toilet",
+            },
+            {
+                "role": "assistant",
+                "content": "kitchen:none, toilet:none"
+            },
+            {
+                "role": "user",
+                "content": "go to the green sofa and then go to the red chair",
+            },
+            {
+                "role": "assistant",
+                "content": "sofa:[0,128,0], chair:[255,0,0]"
+            },
+            {
+                "role": "user",
+                "content": "navigate to the green sofa and turn right and find several chairs, finally go to the painting",
+            },
+            {
+                "role": "assistant",
+                "content": "sofa:[0,128,0], chairs:none, painting:none"
+            },
+            {
+                "role": "user",
+                "content": "approach the blue window in front, turn right and go to the black television, and finally go by the oven in the kitchen",
+            },
+            {
+                "role": "assistant",
+                "content": "window:[0,0,255], television:[0,0,0], oven:none, kitchen:none"
+            },
+            {
+                "role": "user",
+                "content": "First approach the grayish yellowish-brown stairs, then find a nearby light bluish-gray sofa and go there, next come to a very pale purplish-blue picture before finally navigate to a olive-black sink.",
+            },
+            {
+                "role": "assistant",
+                "content": "stairs:[150,130,98], sofa:[176,191,195], picture:[194,203,222], sink:[86,86,45]"
+            },
+            {
+                "role": "user",
+                "content": language_instr
+            }
+        ],
+        max_tokens=300,
+    )
+
+    # Parse LLM response
+    text = response.choices[0].message.content
+    print(f"GPT analyse result: {text}")
+
+    # Initialize output lists
+    objects = []
+    colors_rgb = []
+
+    # Regex to match 'object:[R,G,B]' or 'object:[R1,G1,B1],[R2,G2,B2]' or 'object:none'
+    pattern = re.compile(r'(\w+?)(?::\[(\d+),(\d+),(\d+)\](?:,\[(\d+),(\d+),(\d+)\])?|:(none))')
+
+    # Find all matches in the response
+    matches = pattern.findall(text)
+    print(f"Parsed matches: {matches}")  # Debug print to verify parsing
+
+    for match in matches:
+        obj = match[0]
+        objects.append(obj)
+        
+        if match[7] == 'none':  # Handle 'none' case
+            colors_rgb.append([])
+        else:
+            # Extract RGB values (one or two colors)
+            rgb_list = []
+            # First color
+            rgb_list.append([int(match[1]), int(match[2]), int(match[3])])
+            # Second color, if present
+            if match[4] and match[5] and match[6]:
+                rgb_list.append([int(match[4]), int(match[5]), int(match[6])])
+            colors_rgb.append(rgb_list)
+
+    return objects, colors_rgb
 
 
 def parse_spatial_instruction_deprecated(language_instr):
@@ -356,5 +467,7 @@ def parse_spatial_instruction(language_instr):
             results += text + "\n"
     return text
 if __name__ == '__main__':
-    text = parse_spatial_instruction("go to the sofa, turn right and move in between the table and the chair, and then move back and forth to the keyboard and the screen twice")
+    #text = parse_spatial_instruction("go to the sofa, turn right and move in between the table and the chair, and then move back and forth to the keyboard and the screen twice")
+    text, color = parse_color_object_goal_instruction("Turn around and find a grayish-blue and dark bluish-gray chair, go to a very light-blue table in the front and then walk to the moderate-brown counter, finally move to the purplish-gray sofa.")
     print(text)
+    print(color)

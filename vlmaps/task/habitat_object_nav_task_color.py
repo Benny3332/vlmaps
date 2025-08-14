@@ -152,7 +152,7 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
         map = robot.map
         # 转换为 2D 网格坐标
         row, col = self.world_to_grid(robot, obj_pos)
-        logging.info(f"Object 3D position: {obj_pos}, Grid (row, col): ({row}, {col})")
+        logging.info(f"Object 3D position: [{obj_pos[0]:.3f}, {obj_pos[1]:.3f}, {obj_pos[2]:.3f}], Grid (row, col): ({row}, {col})")
 
         # 转换为裁剪图像坐标
         row_local = row - map.rmin

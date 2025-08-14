@@ -68,7 +68,7 @@ def main(config: DictConfig) -> None:
             "seed": 42,
             "lidar_fov": 360,
             "depth_img_for_lidar_n": 20,
-            "img_save_dir": scene_dir,
+            "img_save_dir": str(scene_dir),
         }
 
         # cfg = make_simple_cfg(sim_setting)

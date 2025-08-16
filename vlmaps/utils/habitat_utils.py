@@ -2,12 +2,88 @@ import os
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
 from scipy.spatial.transform import Rotation as R
-
+import logging
 import cv2
 import habitat_sim
 import numpy as np
 from PIL import Image
 
+def make_cfg_2(settings: Dict) -> habitat_sim.Configuration:
+    sim_cfg = habitat_sim.SimulatorConfiguration()
+    sim_cfg.gpu_device_id = 0
+    sim_cfg.scene_id = settings["scene"]
+    sim_cfg.enable_physics = settings["enable_physics"]
+    if "scene_dataset_config_file" in settings:  # Add this block
+        logging.info(f"Using scene dataset config file: {settings['scene_dataset_config_file']}")
+        sim_cfg.scene_dataset_config_file = settings["scene_dataset_config_file"]
+    sensor_spec = []
+
+    # RGB 传感器
+    if settings["color_sensor"]:
+        rgb_sensor_spec = make_sensor_spec(
+            "color_sensor",
+            habitat_sim.SensorType.COLOR,
+            settings["height"],
+            settings["width"],
+            [0.0, settings["sensor_height"], 0.0],   # 与 semantic 对齐
+            orientation=[0.0, 0.0, 0.0]
+        )
+        sensor_spec.append(rgb_sensor_spec)
+
+    # 深度传感器
+    if settings["depth_sensor"]:
+        depth_sensor_spec = make_sensor_spec(
+            "depth_sensor",
+            habitat_sim.SensorType.DEPTH,
+            settings["height"],
+            settings["width"],
+            [0.0, settings["sensor_height"], 0.0],   # 与 RGB 对齐
+            orientation=[0.0, 0.0, 0.0]
+        )
+        sensor_spec.append(depth_sensor_spec)
+
+    # 语义分割传感器
+    if settings["semantic_sensor"]:
+        semantic_sensor_spec = make_sensor_spec(
+            "semantic_sensor",
+            habitat_sim.SensorType.SEMANTIC,
+            settings["height"],
+            settings["width"],
+            [0.0, settings["sensor_height"], 0.0],   # 与 RGB 对齐
+            orientation=[0.0, 0.0, 0.0]
+        )
+        sensor_spec.append(semantic_sensor_spec)
+
+    # Agent 配置
+    agent_cfg = habitat_sim.agent.AgentConfiguration()
+    agent_cfg.height = 1.4
+    agent_cfg.sensor_specifications = sensor_spec
+    agent_cfg.action_space = {
+        "move_forward": habitat_sim.agent.ActionSpec(
+            "move_forward",
+            habitat_sim.agent.ActuationSpec(amount=settings["move_forward"]),
+        ),
+        "turn_left": habitat_sim.agent.ActionSpec(
+            "turn_left", habitat_sim.agent.ActuationSpec(amount=settings["turn_right"])
+        ),
+        "turn_right": habitat_sim.agent.ActionSpec(
+            "turn_right", habitat_sim.agent.ActuationSpec(amount=settings["turn_right"])
+        ),
+        "move_backward": habitat_sim.agent.ActionSpec(
+            "move_backward",
+            habitat_sim.agent.ActuationSpec(amount=settings["move_backward"]),
+        ),
+        "look_up": habitat_sim.agent.ActionSpec(  
+            "look_up",
+            habitat_sim.agent.ActuationSpec(amount=settings["look_up"]),
+        ),
+        "look_down": habitat_sim.agent.ActionSpec(  
+            "look_down",
+            habitat_sim.agent.ActuationSpec(amount=settings["look_down"]),
+        )
+    }
+
+    return habitat_sim.Configuration(sim_cfg, [agent_cfg])
 
 def make_cfg(settings: Dict) -> habitat_sim.Configuration:
     sim_cfg = habitat_sim.SimulatorConfiguration()
@@ -16,15 +92,15 @@ def make_cfg(settings: Dict) -> habitat_sim.Configuration:
     sim_cfg.enable_physics = settings["enable_physics"]
 
     sensor_spec = []
-    back_rgb_sensor_spec = make_sensor_spec(
-        "back_color_sensor",
-        habitat_sim.SensorType.COLOR,
-        settings["height"],
-        settings["width"],
-        [0.0, settings["sensor_height"], 1.3],
-        orientation=[-np.pi / 8, 0, 0],
-    )
-    sensor_spec.append(back_rgb_sensor_spec)
+    # back_rgb_sensor_spec = make_sensor_spec(
+    #     "back_color_sensor",
+    #     habitat_sim.SensorType.COLOR,
+    #     settings["height"],
+    #     settings["width"],
+    #     [0.0, settings["sensor_height"], 1.3],
+    #     orientation=[-np.pi / 8, 0, 0],
+    # )
+    # sensor_spec.append(back_rgb_sensor_spec)
 
     if settings["color_sensor"]:
         rgb_sensor_spec = make_sensor_spec(

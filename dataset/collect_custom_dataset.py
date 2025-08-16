@@ -5,7 +5,19 @@ import numpy as np
 from omegaconf import DictConfig
 import habitat_sim
 from vlmaps.utils.habitat_utils import *
-
+import cv2
+d3_40_colors_rgb = np.array([
+    [31, 119, 180], [174, 199, 232], [255, 127, 14], [255, 187, 120],
+    [44, 160, 44], [152, 223, 138], [214, 39, 40], [255, 152, 150],
+    [148, 103, 189], [197, 176, 213], [140, 86, 75], [196, 156, 148],
+    [227, 119, 194], [247, 182, 210], [127, 127, 127], [199, 199, 199],
+    [188, 189, 34], [219, 219, 141], [23, 190, 207], [158, 218, 229],
+    [57, 59, 121], [82, 84, 163], [107, 110, 207], [156, 158, 222],
+    [99, 121, 57], [140, 162, 82], [181, 207, 107], [206, 219, 156],
+    [140, 109, 49], [189, 158, 57], [231, 186, 82], [231, 203, 148],
+    [132, 60, 57], [173, 73, 74], [214, 97, 107], [231, 150, 156],
+    [123, 65, 115], [165, 81, 148], [206, 109, 189], [222, 158, 214]
+], dtype=np.uint8)
 
 @hydra.main(
     version_base=None,
@@ -109,6 +121,7 @@ def main(config: DictConfig) -> None:
         release_count = 0
         while True:
             show_rgb(obs)
+            send_semantic(obs)
             k, action = keyboard_control_fast()
             # print(f"keybroad: {k}")
             if k != -1:
@@ -156,6 +169,26 @@ def main(config: DictConfig) -> None:
             agent_states.append(agent.get_state())
         save_states(root_save_dir, agent_states)
 
+def send_semantic(obs):
+    """可视化语义分割图像但不保存"""
+    # 获取语义传感器数据
+    semantic_obs = obs["semantic_sensor"]
+    
+    # 创建调色板图像 (P模式)
+    semantic_img = Image.new("P", (semantic_obs.shape[1], semantic_obs.shape[0]))
+    
+    # 应用D3-40调色板 (需确保 d3_40_colors_rgb 已定义)
+    semantic_img.putpalette(d3_40_colors_rgb.flatten())
+    
+    # 将语义ID映射到调色板索引 (取模40确保在0-39范围内)
+    semantic_img.putdata((semantic_obs.flatten() % 40).astype(np.uint8))
+    
+    # 转换为RGB图像并转成OpenCV格式
+    semantic_rgb = np.array(semantic_img.convert("RGB"))
+    semantic_bgr = cv2.cvtColor(semantic_rgb, cv2.COLOR_RGB2BGR)
+    
+    # 显示图像
+    cv2.imshow("semantic", semantic_bgr)
 
 if __name__ == "__main__":
 

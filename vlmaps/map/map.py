@@ -262,7 +262,7 @@ class Map:
         contours, centers, bbox_list, color_dists = self.get_pos_and_color(name, vis)
         
         # 过滤小物体
-        ids_list = self.filter_small_objects(bbox_list, name, area_thres=5)
+        ids_list = self.filter_small_objects(bbox_list, name, area_thres=1)
         contours = [contours[i] for i in ids_list]
         centers = [centers[i] for i in ids_list]
         bbox_list = [bbox_list[i] for i in ids_list]

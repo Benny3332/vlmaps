@@ -55,9 +55,9 @@ def _init_lseg():
     return lseg_model, lseg_transform, crop_size, base_size, norm_mean, norm_std
 
 if __name__ == "__main__":
-    file_path = "/home/ws/dataset/HM3D_enviroment/lvlmaps_dataset/5LpN3gDmAk7_1/rgb"
+    file_path = "/home/ws/dataset/HM3D_enviroment/vlmaps_dataset/5LpN3gDmAk7_1/rgb"
     # file_path = "/media/benny/bennyMove/data/collect_tran_vlmaps_data/"
-    rgb_file_name = "001507.png"
+    rgb_file_name = "000039.png"
     lseg_model, lseg_transform, crop_size, base_size, norm_mean, norm_std = _init_lseg()
     rgb_path = Path(file_path) / rgb_file_name
     bgr = cv2.imread(str(rgb_path))

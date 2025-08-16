@@ -24,7 +24,7 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
     def load_task(self):
         assert hasattr(self, "vlmaps_dataloader"), "Please call setup_scene() first"
 
-        task_path = Path(self.vlmaps_dataloader.data_dir) / "object_navigation_tasks_color.json"
+        task_path = Path(self.vlmaps_dataloader.data_dir) / "color_object_nav_dataset.json"
         with open(task_path, "r") as f:
             self.task_dict = json.load(f)
 
@@ -38,7 +38,25 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
         self.scene = self.task_dict[task_id]["scene"]
         self.instruction = self.task_dict[task_id]["instruction"]
         self.goal_classes = [x["name"] for x in self.task_dict[task_id]["objects_info"]]
+        self.objects_info = self.task_dict[task_id]["objects_info"]
+        # metric
+        self.n_subgoals_in_task = len(self.goal_classes)
+        self.curr_subgoal_id = 0
+        self.finished_subgoals = []
+        self.distance_to_subgoals = []
+        self.success = False
+        self.actions = []
 
+    def setup_task_v2(self, task_id: int):
+        json_task_id = self.task_dict[task_id]["task_id"]
+        assert json_task_id == task_id, "Task ID mismatch"
+        self.task_id = task_id
+        self.init_hab_tf = np.array(self.task_dict[task_id]["tf_habitat"], dtype=np.float32).reshape((4, 4))
+        self.map_grid_size = self.task_dict[task_id]["map_grid_size"]
+        self.map_cell_size = self.task_dict[task_id]["map_cell_size"]
+        self.scene = self.task_dict[task_id]["scene"]
+        self.goal_classes = [x["name"] for x in self.task_dict[task_id]["objects_info"]]
+        self.objects_info = self.task_dict[task_id]["objects_info"]
         # metric
         self.n_subgoals_in_task = len(self.goal_classes)
         self.curr_subgoal_id = 0
@@ -78,6 +96,49 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
         closest_obj = class_objects[ranks[0]]
         closest_dist = dists_list[ranks[0]]
         return closest_obj, closest_dist
+
+    def visualize_closest_object(self, robot: HabitatLanguageRobot, target_object: dict, vis: bool = False):
+        obj_id = target_object["object_id"]
+        obj_name = target_object["name"]
+        obj_pos = np.array(target_object["position"], dtype=np.float32)  # 3D world coordinates
+
+        logging.info(f"Visualizing object: {obj_name} (ID: {obj_id}) at position: [{obj_pos[0]:.3f}, {obj_pos[1]:.3f}, {obj_pos[2]:.3f}]")
+
+        # Convert 3D world coordinates to 2D grid coordinates
+        row, col = self.world_to_grid(robot, obj_pos)
+        logging.info(f"Grid (row, col): ({row}, {col})")
+
+        # Convert to cropped image coordinates
+        map = robot.map
+        row_local = row - map.rmin
+        col_local = col - map.cmin
+        logging.info(f"Local (row, col): ({row_local}, {col_local})")
+
+        # Visualize
+        if vis:
+            obs_map = map.get_customized_obstacle_cropped()
+            if obs_map is None or obs_map.size == 0:
+                logging.error("Error: obs_map is empty or invalid!")
+                return target_object, None
+            
+            # Create three-channel BGR image
+            obs_map_vis = (obs_map * 255).astype(np.uint8)
+            obs_map_vis = np.stack([obs_map_vis] * 3, axis=-1)
+
+            # Draw object center point (red)
+            cv2.circle(
+                obs_map_vis,
+                (col_local, row_local),
+                radius=5,
+                color=(0, 0, 255),
+                thickness=-1
+            )
+
+            # Display the image
+            cv2.imshow(f"Object Visualization: {obj_name} (ID: {obj_id})", obs_map_vis)
+            # cv2.waitKey()  # Uncomment if waiting for keypress is desired
+
+        return target_object, None
 
     def is_task_finished(self):
         # TODO: think about other finish conditions
@@ -125,6 +186,92 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
                 self.n_success_tasks += 1
             self.subgoal_success_rate = float(len(self.finished_subgoals)) / self.n_subgoals_in_task
 
+    def test_step_v2(self, sim: habitat_sim.Simulator, robot: HabitatLanguageRobot, action: str, agent_position: np.array = None, vis: bool = False):
+        """
+        Execute a single step in the navigation task and evaluate success based on object position and radius.
+
+        Args:
+            sim (Simulator): Habitat simulator instance.
+            robot (HabitatLanguageRobot): Robot instance for navigation.
+            action (str): Action to execute (e.g., 'move_forward', 'stop').
+            agent_position (np.array, optional): Current position of the agent. If None, retrieved from simulator.
+            vis (bool): Whether to visualize the step.
+        """
+        self.actions.append(action)
+        
+        if action == "stop":
+            if agent_position is None:
+                agent = sim.get_agent(0)
+                agent_state = agent.get_state()
+                agent_position = np.array(agent_state.position, dtype=np.float32)
+            
+            next_subgoal_name = self.goal_classes[self.curr_subgoal_id]
+            
+            # Find the object in objects_info matching the current subgoal name
+            target_object = None
+            for obj in self.objects_info:
+                if obj["name"] == next_subgoal_name:
+                    target_object = obj
+                    break
+            
+            if target_object is None:
+                logging.error(f"No object found in objects_info for subgoal {next_subgoal_name}. Skipping.")
+                self.distance_to_subgoals.append(float('inf'))
+                self.curr_subgoal_id += 1
+                if vis:
+                    obs = sim.get_sensor_observations(0)
+                    display_sample({}, obs["color_sensor"], waitkey=True)
+                return
+
+            # Extract object position and radius
+            object_position = np.array(target_object["position"], dtype=np.float32)
+            object_radius = float(target_object["radius"])
+
+            # Calculate 2D Euclidean distance (ignoring height)
+            distance_2d = np.sqrt(
+                (agent_position[0] - object_position[0])**2 +
+                (agent_position[2] - object_position[2])**2
+            )
+            
+            # Adjust distance by subtracting object radius
+            adjusted_distance = max(0.0, distance_2d - object_radius)
+            
+            # Check height difference to ensure same floor (within 1m)
+            height_diff = abs(agent_position[1] - object_position[1])
+            is_same_floor = height_diff <= 1.0
+            
+            self.distance_to_subgoals.append(adjusted_distance)
+            
+            # Evaluate success: distance < 1m and on the same floor
+            if adjusted_distance < 1.0 and is_same_floor:
+                self.finished_subgoals.append(self.curr_subgoal_id)
+                logging.info(f"###({self.curr_subgoal_id + 1}/{self.n_subgoals_in_task}) {next_subgoal_name} reached! Distance: {adjusted_distance:.2f}m, Height diff: {height_diff:.2f}m.###")
+            else:
+                logging.info(f"###({self.curr_subgoal_id + 1}/{self.n_subgoals_in_task}) {next_subgoal_name} unreached! Distance: {adjusted_distance:.2f}m, Height diff: {height_diff:.2f}m.###")
+            if vis:
+                self.visualize_closest_object(robot, target_object, vis)
+            self.curr_subgoal_id += 1
+            
+            # Display visualization and wait for keypress on stop action
+            if vis:
+                obs = sim.get_sensor_observations(0)
+                display_sample({}, obs["color_sensor"], waitkey=True)
+        else:
+            sim.step(action)
+            if vis:
+                obs = sim.get_sensor_observations(0)
+                display_sample({}, obs["color_sensor"], waitkey=False)
+        
+        # Update task metrics
+        if self.is_task_finished():
+            self.n_tot_tasks += 1
+            self.n_tot_subgoals += self.n_subgoals_in_task
+            self.n_success_subgoals += len(self.finished_subgoals)
+            if len(self.finished_subgoals) == self.n_subgoals_in_task:
+                self.success = True
+                self.n_success_tasks += 1
+            self.subgoal_success_rate = float(len(self.finished_subgoals)) / self.n_subgoals_in_task
+    
     def save_single_task_metric(
         self,
         save_path: Union[Path, str],
@@ -146,6 +293,28 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
         results_dict["actions"] = self.actions
         with open(save_path, "w") as f:
             json.dump(results_dict, f, indent=4)
+
+    def save_single_task_metric_v2(
+        self,
+        save_path: Union[Path, str],
+        forward_dist: float = 0.05,
+        turn_angle: float = 1,
+    ):
+        results_dict = {}
+        results_dict["task_id"] = self.task_id
+        results_dict["scene"] = self.scene
+        results_dict["num_subgoals"] = self.n_subgoals_in_task
+        # results_dict["num_subgoal_success"] = self.n_success_subgoals
+        results_dict["subgoal_success_rate"] = self.subgoal_success_rate
+        results_dict["finished_subgoal_ids"] = self.finished_subgoals
+        results_dict["goal_classes"] = self.goal_classes
+        results_dict["forward_dict"] = forward_dist
+        results_dict["turn_angle"] = turn_angle
+        results_dict["init_tf_hab"] = self.init_hab_tf.tolist()
+        results_dict["actions"] = self.actions
+        with open(save_path, "w") as f:
+            json.dump(results_dict, f, indent=4)
+    
     def find_and_visualize_closest_object(self, robot: HabitatLanguageRobot, class_name: str, pos_hab: np.ndarray, vis: bool = False):
         closest_obj, closest_dist = self.find_closest_object_from_class(class_name, pos_hab)
         obj_pos = closest_obj.aabb.center  # 3D 世界坐标

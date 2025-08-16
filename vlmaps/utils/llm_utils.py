@@ -2,6 +2,8 @@ import os
 import openai
 import httpx
 import re
+from typing import List, Tuple
+
 def parse_object_goal_instruction_deprecated(language_instr):
     """
     [deprecated]: only for older version of OpenAI API
@@ -234,6 +236,131 @@ def parse_color_object_goal_instruction(language_instr):
             colors_rgb.append(rgb_list)
 
     return objects, colors_rgb
+
+def parse_color_object_goal_instruction_v2(objects_info: List[dict], classes_list: List[str]) -> Tuple[List[str], List[List[List[int]]]]:
+    """
+    Parse objects_info into a series of landmarks with colors, returning two lists:
+    - List of object names that exist in classes_list (or their most relevant matches)
+    - List of lists of RGB values for each object (derived from color_name using LLM)
+    
+    Uses LLM to verify if object names are in classes_list or find the most relevant category,
+    and to convert ISCC-NBS color names to RGB values.
+    
+    Example input: objects_info = [
+        {"name": "cushion", "color_name": "bluish-gray cushion"},
+        {"name": "chair", "color_name": "light bluish-gray chair"},
+        {"name": "counter", "color_name": "dark grayish and olive-green counter"},
+        {"name": "picture", "color_name": "very pale purplish-blue picture"}
+    ]
+    Example output: 
+    (
+        ["cushion", "chair", "counter", "picture"],
+        [[[135, 140, 155]], [[176, 191, 195]], [[48, 46, 42], [109, 113, 115]], [[194, 203, 222]]]
+    )
+    """
+        # Initialize OpenAI client
+    openai_key = os.environ["DASHSCOPE_API_KEY"]
+    client = openai.OpenAI(
+        api_key=openai_key,
+        base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
+        http_client=httpx.Client(trust_env=False)
+    )
+
+    # Initialize output lists
+    object_categories = []
+    colors_rgb = []
+
+    # Prepare classes list for LLM query
+    classes_list_str = ",".join(classes_list)
+
+    for obj_info in objects_info:
+        obj_name = obj_info["name"]
+        color_name = obj_info["color_name"]
+
+        # Use LLM to verify object name and convert color_name to RGB
+        response = client.chat.completions.create(
+            model="qwen-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert in ISCC-NBS color nomenclature and object categorization. For the given object and color description, extract the object name and convert any ISCC-NBS color names to their corresponding RGB values ([R,G,B]). Return the result in the format: 'object:[R,G,B]' for one color, or 'object:[R1,G1,B1],[R2,G2,B2]' for two colors. If the object is not in the provided list, return the most relevant category from the list. Ensure RGB values are integers between 0 and 255."
+                },
+                {
+                    "role": "user",
+                    "content": "What is television most relevant to among tv_monitor,plant,chair, and convert dark gray to RGB"
+                },
+                {
+                    "role": "assistant",
+                    "content": "tv_monitor:[64,64,64]"
+                },
+                {
+                    "role": "user",
+                    "content": "What is drawer most relevant to among tv_monitor,chest_of_drawers,chair, and convert light blue to RGB"
+                },
+                {
+                    "role": "assistant",
+                    "content": "chest_of_drawers:[135,206,235]"
+                },
+                {
+                    "role": "user",
+                    "content": "What is sofa most relevant to among couch,bed,chair, and convert green to RGB"
+                },
+                {
+                    "role": "assistant",
+                    "content": "couch:[0,128,0]"
+                },
+                {
+                    "role": "user",
+                    "content": "What is painting most relevant to among picture,window,door, and convert very pale purplish-blue to RGB"
+                },
+                {
+                    "role": "assistant",
+                    "content": "picture:[194,203,222]"
+                },
+                {
+                    "role": "user",
+                    "content": f"What is {obj_name} most relevant to among {classes_list_str}, and convert {color_name} to RGB"
+                }
+            ],
+            max_tokens=300,
+        )
+
+        # Parse LLM response
+        text = response.choices[0].message.content.strip()
+        print(f"LLM response for {obj_name}: {text}")
+
+        # Regex to match 'object:[R,G,B]' or 'object:[R1,G1,B1],[R2,G2,B2]'
+        pattern = re.compile(r'(\w+):(?:\[(\d+),(\d+),(\d+)\](?:,\[(\d+),(\d+),(\d+)\])?)$')
+        match = pattern.match(text)
+
+        if match:
+            matched_category = match.group(1)
+            rgb_list = []
+
+            # Extract first color
+            try:
+                rgb_list.append([int(match.group(2)), int(match.group(3)), int(match.group(4))])
+            except (TypeError, ValueError) as e:
+                print(f"Error: Invalid RGB values in LLM response for {obj_name}: {text}. Skipping.")
+                continue
+
+            # Extract second color if present
+            if match.group(5) and match.group(6) and match.group(7):
+                try:
+                    rgb_list.append([int(match.group(5)), int(match.group(6)), int(match.group(7))])
+                except (TypeError, ValueError) as e:
+                    print(f"Error: Invalid second RGB values in LLM response for {obj_name}: {text}. Skipping.")
+                    continue
+
+            if matched_category in classes_list:
+                object_categories.append(matched_category)
+                colors_rgb.append(rgb_list)
+            else:
+                print(f"Warning: LLM returned {matched_category} which is not in classes_list for {obj_name}. Skipping.")
+        else:
+            print(f"Error: Invalid LLM response format for {obj_name}: {text}. Expected format 'object:[R,G,B]' or 'object:[R1,G1,B1],[R2,G2,B2]'. Skipping.")
+
+    return object_categories, colors_rgb
 
 
 def parse_spatial_instruction_deprecated(language_instr):

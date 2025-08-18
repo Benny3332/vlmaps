@@ -243,7 +243,8 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
             self.distance_to_subgoals.append(adjusted_distance)
             
             # Evaluate success: distance < 1m and on the same floor
-            if adjusted_distance < 1.0 and is_same_floor:
+            # if adjusted_distance < 1.0 and is_same_floor:
+            if adjusted_distance < 1.0:
                 self.finished_subgoals.append(self.curr_subgoal_id)
                 logging.info(f"###({self.curr_subgoal_id + 1}/{self.n_subgoals_in_task}) {next_subgoal_name} reached! Distance: {adjusted_distance:.2f}m, Height diff: {height_diff:.2f}m.###")
             else:

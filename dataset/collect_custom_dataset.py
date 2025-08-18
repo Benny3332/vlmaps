@@ -107,7 +107,7 @@ def main(config: DictConfig) -> None:
         # agent.set_state(agent_state)
         # agent_state = habitat_sim.AgentState()
         pose = [3.278000593185425,	3.456643581390381,	4.238160133361816,	0.0,	0.0,	0.0,	1.0]
-        agent_state.position = pose[:3]
+        agent_state.position = random_pt
         agent_state.rotation = pose[3:]
         agent.set_state(agent_state)
         agent_state = agent.get_state()

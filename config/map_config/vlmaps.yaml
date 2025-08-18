@@ -16,8 +16,10 @@ skip_frame: 2
 cam_calib_mat: [540, 0, 540, 0, 540, 360, 0, 0, 1]
 grid_size: ${params.gs}
 cell_size: ${params.cs}
+min_height: 0.2
+max_height: 2.5
 depth_sample_rate: 100
-dilate_iter: 3
+dilate_iter: 1
 gaussian_sigma: 1.0
 customize_obstacle_map: False
 potential_obstacle_names:
@@ -35,6 +37,7 @@ obstacle_names:
   - "table"
   - "window"
   - "stairs"
+  - "ceiling"
   - "other"
 categories: "mp3d" # "mp3d", "ai2thor"
 vis: False

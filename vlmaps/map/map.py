@@ -89,9 +89,15 @@ class Map:
         """
         assert self.occupied_ids is not None, "map not loaded"
         heights = np.arange(0, self.occupied_ids.shape[-1]) * self.cs
+        logging.info(f"heights min: {np.min(heights)}, max: {np.max(heights)}")
         height_mask = np.logical_and(heights > h_min, heights < h_max)
         self.obstacles_map = np.sum(self.occupied_ids[..., height_mask] > 0, axis=2) == 0
         self.generate_cropped_obstacle_map(self.obstacles_map)
+        
+        # obs_map_vis = (self.obstacles_map[:, :, None] * 255).astype(np.uint8)
+        # obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
+        # cv2.imshow("#obs#", obs_map_vis)
+        # cv2.waitKey()
         return self.obstacles_map
 
     def generate_cropped_obstacle_map(self, obstacle_map: np.ndarray) -> np.ndarray:

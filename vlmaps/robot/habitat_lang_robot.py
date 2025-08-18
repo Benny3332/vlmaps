@@ -448,11 +448,11 @@ class HabitatLanguageRobot(LangRobot):
         curr_pose_on_full_map = self.get_agent_pose_on_map()  # (row, col, angle_deg) on full map
         # print(f"self.config[\"nav\"][\"vis\"] : {self.config['nav']['vis']}")
         paths = self.nav.plan_to(
-            curr_pose_on_full_map[:2], pos, vis=self.config["nav"]["vis"]
+            curr_pose_on_full_map[:2], pos, vis=self.config["nav"]["plann_vis"]
         )  # take (row, col) in full map
         # print(paths)
         actions_list, poses_list = self.controller.convert_paths_to_actions(curr_pose_on_full_map, paths[1:])
-        success, real_actions_list = self.execute_actions(actions_list, poses_list, vis=self.config["nav"]["vis"])
+        success, real_actions_list = self.execute_actions(actions_list, poses_list, vis=self.config["nav"]["plann_vis"])
         actual_actions_list.extend(real_actions_list)
 
         actual_actions_list.append("stop")

@@ -26,7 +26,7 @@ class LangRobot:
     def load_scene_map(self, data_dir: str, map_config: DictConfig):
         self.map = Map.create(map_config)
         self.map.load_map(data_dir)
-        self.map.generate_obstacle_map()
+        self.map.generate_obstacle_map(map_config.min_height,map_config.max_height)
 
     def empty_recorded_actions(self):
         self.recorded_actions_list = []
@@ -183,7 +183,7 @@ class LangRobot:
     def move_to_color_object(self, name: str, color_list: List[List[int]], vis: bool = False):
         self._set_nav_curr_pose()
         # color_list = [[56,98,173]]
-        pos = self.map.get_nearest_and_similarity_color_pos(self.curr_pos_on_map, name, color_list, 1, vis)
+        pos = self.map.get_nearest_and_similarity_color_pos(self.curr_pos_on_map, name, color_list, 1.0, vis)
         self.move_to(pos)
 
     def move_forward(self, meters: float):

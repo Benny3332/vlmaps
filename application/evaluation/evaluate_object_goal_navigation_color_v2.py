@@ -6,7 +6,7 @@ import hydra
 import logging
 from vlmaps.task.habitat_object_nav_task_color import HabitatObjectNavigationTaskColor
 from vlmaps.robot.habitat_lang_robot import HabitatLanguageRobot
-from vlmaps.utils.llm_utils import parse_color_object_goal_instruction_v2
+from vlmaps.utils.llm_utils import parse_color_object_goal_instruction_v3
 from vlmaps.utils.matterport3d_categories import (mp3dcat, mp3dcat_2)
 
 @hydra.main(
@@ -67,7 +67,7 @@ def main(config: DictConfig) -> None:
             
 
             # 解析目标指令中的物体类别,调用GPT API解析指令，返回一个列表，每个元素都是一个物体
-            object_categories, colors_rgb = parse_color_object_goal_instruction_v2(object_nav_task.objects_info, robot.map.categories)
+            object_categories, colors_rgb = parse_color_object_goal_instruction_v3(object_nav_task.objects_info, robot.map.categories)
 
             # 打印目标指令
             logging.info(f"objects: {object_categories}")
@@ -87,7 +87,7 @@ def main(config: DictConfig) -> None:
                 logging.info(f"Navigating to category {cat} with color {color}")
 
                 # 执行移动到物体的动作
-                actions_list = robot.move_to_color_object(cat, color, config.nav.vis2)
+                actions_list = robot.move_to_color_object(cat, color, config.nav.vis)
 
             # 获取已记录的动作列表
             recorded_actions_list = robot.get_recorded_actions()
@@ -98,7 +98,7 @@ def main(config: DictConfig) -> None:
             # 遍历已记录的动作列表
             for action in recorded_actions_list:
                 # 执行测试步骤
-                object_nav_task.test_step_v2(robot.sim, robot, action, vis=config.nav.vis2)
+                object_nav_task.test_step_v2(robot.sim, robot, action, vis=config.nav.vis)
 
             # 获取保存目录
             save_dir = robot.vlmaps_dataloader.data_dir / (config.map_config.map_type + "_color_obj_nav_results_v2")

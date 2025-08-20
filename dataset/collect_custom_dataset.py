@@ -82,6 +82,10 @@ def main(config: DictConfig) -> None:
 
         # create a simulator instance
         sim = habitat_sim.Simulator(cfg)
+        intrinsics = get_camera_intrinsics(sim, "color_sensor")
+        logging.info(f"color_sensor intrinsics: {intrinsics}")
+        intrinsics = get_camera_intrinsics(sim, "depth_sensor")
+        logging.info(f"depth_sensor intrinsics: {intrinsics}")
         scene = sim.semantic_scene
         objs = scene.objects
         levels = scene.levels
@@ -168,6 +172,25 @@ def main(config: DictConfig) -> None:
             save_obs(root_save_dir, sim_setting, obs, action_i + 1, obj2cls)
             agent_states.append(agent.get_state())
         save_states(root_save_dir, agent_states)
+
+def get_camera_intrinsics(sim, sensor_name):
+    # 获取渲染相机
+    render_camera = sim._sensors[sensor_name]._sensor_object.render_camera
+    # 获取投影矩阵
+    projection_matrix = render_camera.projection_matrix
+    # 获取视口大小（分辨率）
+    viewport_size = render_camera.viewport
+    # 计算内参
+    fx = projection_matrix[0, 0] * viewport_size[0] / 2.0
+    fy = projection_matrix[1, 1] * viewport_size[1] / 2.0
+    cx = (projection_matrix[2, 0] + 1.0) * viewport_size[0] / 2.0
+    cy = (projection_matrix[2, 1] + 1.0) * viewport_size[1] / 2.0
+    intrinsics = np.array([
+        [fx, 0, cx],
+        [0, fy, cy],
+        [0, 0, 1]
+    ])
+    return intrinsics
 
 def send_semantic(obs):
     """可视化语义分割图像但不保存"""

@@ -3,12 +3,13 @@ import math
 import numpy as np
 import cv2
 import torch
-
+import os
+from scipy.ndimage import label
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
+from matplotlib import cm
 
 from vlmaps.utils.mapping_utils import *
-
 from vlmaps.lseg.modules.models.lseg_net import LSegEncNet
 from vlmaps.lseg.additional_utils.models import resize_image, pad_image, crop_image
 
@@ -23,6 +24,9 @@ def get_lseg_feat(
     norm_mean=[0.5, 0.5, 0.5],
     norm_std=[0.5, 0.5, 0.5],
     vis=False,
+    is_save=False,
+    save_path=None,
+    file_name=None
 ):
     # 复制图像以便后续可视化
     vis_image = image.copy()
@@ -31,10 +35,11 @@ def get_lseg_feat(
     image = transform(image).unsqueeze(0).to(device)
     img = image[0].permute(1, 2, 0)
     img = img * 0.5 + 0.5
-
+    
     # 获取图像尺寸和步长
     batch, _, h, w = image.size()
     stride_rate = 2.0 / 3.0
+    # stride_rate = 0.5
     stride = int(crop_size * stride_rate)
 
     # 设置长边尺寸
@@ -112,101 +117,89 @@ def get_lseg_feat(
     pred = predicts[0]
 
     if vis:
-        visual_semantic_picture(labels, vis_image, pred)
+        num_labels = len(labels)
+        new_palette, rgb_colors = generate_palette(num_labels)
+        visual_semantic_picture(labels, vis_image, pred, new_palette, rgb_colors)
 
+    if is_save and save_path and file_name:
+        num_labels = len(labels)
+        new_palette, rgb_colors = generate_palette(num_labels)
+        save_semantic_picture(labels, vis_image, pred, new_palette, rgb_colors, save_path, file_name)
     return outputs
 
-def visual_semantic_picture(labels, vis_image, pred):
-    # 获取新的调色板和掩码
-    from matplotlib import cm
-    num_labels = len(labels)
-        
-        # 根据标签数量选择合适的调色板
+def generate_palette(num_labels):
     if num_labels <= 20:
         cmap = cm.get_cmap('tab20', num_labels)
     elif num_labels <= 30:
-        cmap = cm.get_cmap('tab20', 20)  # 重复使用
-            # 补充额外颜色
+        cmap = cm.get_cmap('tab20', 20)
     else:
-        cmap = cm.get_cmap('hsv', num_labels)  # 使用hsv提供更多颜色
-            
-        # 转换为 0-255 的整数列表格式
+        cmap = cm.get_cmap('hsv', num_labels)
+
     new_palette = []
+    rgb_colors = []
     for i in range(num_labels):
-            # 处理颜色数量不足的情况
         color_idx = i % min(20, num_labels) if num_labels > 20 else i
         r, g, b, _ = [int(x * 255) for x in cmap(color_idx)]
         new_palette.extend([r, g, b])
+        rgb_colors.append((r / 255.0, g / 255.0, b / 255.0))
 
-        # 如果 palette 长度不足 256*3，需要补全（PIL 要求）
     while len(new_palette) < 256 * 3:
         new_palette.append(0)
 
+    return new_palette, rgb_colors
+
+def save_semantic_picture(labels, vis_image, pred, new_palette, rgb_colors, save_path, file_name):
+    num_labels = len(labels)
     mask, _ = get_new_mask_pallete(pred, new_palette, out_label_flag=True, labels=labels)
     seg = mask.convert("RGBA")
 
-        # 创建图形和子图 - 增加图形高度以适应多列图例
-    fig_height = max(12, 8 + num_labels * 0.3)  # 根据标签数量动态调整高度
+    fig_height = max(12, 8 + num_labels * 0.3)
     fig, axs = plt.subplots(2, 1, figsize=(14, fig_height),
-                                 gridspec_kw={'hspace': 0.15, 'height_ratios': [3, 2]},
-                                 subplot_kw=dict(xticks=[], yticks=[]))
+                           gridspec_kw={'hspace': 0.15, 'height_ratios': [3, 2]},
+                           subplot_kw=dict(xticks=[], yticks=[]))
 
-        # 显示原始图像
     axs[1].imshow(vis_image)
     axs[1].set_title('Original Image', fontsize=14, pad=10)
     axs[1].axis('off')
 
-        # 显示分割图像
     ax0 = axs[0]
     ax0.imshow(seg)
     ax0.set_title('Segmentation Result', fontsize=14, pad=10)
     ax0.axis('off')
 
-        # 创建图例颜色（用于 matplotlib 显示）
-    rgb_colors = []
-    for i in range(num_labels):
-        color_idx = i % min(20, num_labels) if num_labels > 20 else i
-        r, g, b, _ = cmap(color_idx)
-        rgb_colors.append((r, g, b))
-
-        # 添加图例并编号 - 支持多列显示
     legend_elements = [Patch(facecolor=rgb_colors[i], label=f"{i}: {labels[i]}") for i in range(num_labels)]
-        
-        # 根据标签数量动态调整列数
-    ncol = min(3, max(1, num_labels // 8 + 1))  # 最多3列，每列约8个标签
-        
-        # 计算图例位置和大小
-    legend = ax0.legend(handles=legend_elements,
-                           loc='center left',
-                           bbox_to_anchor=(1.02, 0.5),
-                           fontsize=9,
-                           title="Labels",
-                           title_fontsize=11,
-                           frameon=True,
-                           ncol=ncol,  # 多列显示
-                           columnspacing=1.0,
-                           handletextpad=0.5,
-                           handlelength=1.0,
-                           borderaxespad=0.5)
+    ncol = min(3, max(1, num_labels // 8 + 1))
 
-        # 设置图例背景和边框
+    legend = ax0.legend(handles=legend_elements,
+                       loc='center left',
+                       bbox_to_anchor=(1.02, 0.5),
+                       fontsize=9,
+                       title="Labels",
+                       title_fontsize=11,
+                       frameon=True,
+                       ncol=ncol,
+                       columnspacing=1.0,
+                       handletextpad=0.5,
+                       handlelength=1.0,
+                       borderaxespad=0.5)
+
     legend.get_frame().set_facecolor('white')
     legend.get_frame().set_alpha(0.9)
     legend.get_frame().set_edgecolor('gray')
 
-        # 在每个mask区域中心添加编号
     for label_id in range(num_labels):
-            # 提取当前label对应的mask区域
         mask_region = (pred == label_id).astype(np.uint8)
         if mask_region.sum() == 0:
-            continue  # 没有该类别的mask
-
-            # 计算质心坐标
-        coords = np.where(mask_region > 0)
-        cy, cx = int(coords[0].mean()), int(coords[1].mean())
-
-            # 添加文本标注
-        ax0.text(cx, cy, str(label_id),
+            continue
+        # Find connected components
+        labeled_array, num_features = label(mask_region)
+        for region_id in range(1, num_features + 1):
+            region = (labeled_array == region_id).astype(np.uint8)
+            if region.sum() < 100:  # Ignore small regions (noise)
+                continue
+            coords = np.where(region > 0)
+            cy, cx = int(coords[0].mean()), int(coords[1].mean())
+            ax0.text(cx, cy, str(label_id),
                      color='white',
                      fontsize=11,
                      ha='center',
@@ -214,6 +207,71 @@ def visual_semantic_picture(labels, vis_image, pred):
                      weight='bold',
                      bbox=dict(boxstyle="circle,pad=0.2", facecolor='black', alpha=0.6))
 
-        # 调整布局防止图例被裁剪
-    plt.tight_layout(rect=[0, 0, 0.8, 1])  # 留出右边空间给图例
+    plt.tight_layout(rect=[0, 0, 0.8, 1])
+    save_file = os.path.join(save_path, file_name)
+    os.makedirs(save_path, exist_ok=True)
+    plt.savefig(save_file, bbox_inches='tight', dpi=300)
+    plt.close(fig)
+
+
+def visual_semantic_picture(labels, vis_image, pred, new_palette, rgb_colors):
+    num_labels = len(labels)
+    mask, _ = get_new_mask_pallete(pred, new_palette, out_label_flag=True, labels=labels)
+    seg = mask.convert("RGBA")
+
+    fig_height = max(12, 8 + num_labels * 0.3)
+    fig, axs = plt.subplots(2, 1, figsize=(14, fig_height),
+                           gridspec_kw={'hspace': 0.15, 'height_ratios': [3, 2]},
+                           subplot_kw=dict(xticks=[], yticks=[]))
+
+    axs[1].imshow(vis_image)
+    axs[1].set_title('Original Image', fontsize=14, pad=10)
+    axs[1].axis('off')
+
+    ax0 = axs[0]
+    ax0.imshow(seg)
+    ax0.set_title('Segmentation Result', fontsize=14, pad=10)
+    ax0.axis('off')
+
+    legend_elements = [Patch(facecolor=rgb_colors[i], label=f"{i}: {labels[i]}") for i in range(num_labels)]
+    ncol = min(3, max(1, num_labels // 8 + 1))
+
+    legend = ax0.legend(handles=legend_elements,
+                       loc='center left',
+                       bbox_to_anchor=(1.02, 0.5),
+                       fontsize=9,
+                       title="Labels",
+                       title_fontsize=11,
+                       frameon=True,
+                       ncol=ncol,
+                       columnspacing=1.0,
+                       handletextpad=0.5,
+                       handlelength=1.0,
+                       borderaxespad=0.5)
+
+    legend.get_frame().set_facecolor('white')
+    legend.get_frame().set_alpha(0.9)
+    legend.get_frame().set_edgecolor('gray')
+
+    for label_id in range(num_labels):
+        mask_region = (pred == label_id).astype(np.uint8)
+        if mask_region.sum() == 0:
+            continue
+        # Find connected components
+        labeled_array, num_features = label(mask_region)
+        for region_id in range(1, num_features + 1):
+            region = (labeled_array == region_id).astype(np.uint8)
+            if region.sum() < 100:  # Ignore small regions (noise)
+                continue
+            coords = np.where(region > 0)
+            cy, cx = int(coords[0].mean()), int(coords[1].mean())
+            ax0.text(cx, cy, str(label_id),
+                     color='white',
+                     fontsize=11,
+                     ha='center',
+                     va='center',
+                     weight='bold',
+                     bbox=dict(boxstyle="circle,pad=0.2", facecolor='black', alpha=0.6))
+
+    plt.tight_layout(rect=[0, 0, 0.8, 1])
     plt.show()

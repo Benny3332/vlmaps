@@ -13,8 +13,8 @@ from vlmaps.utils.gml_floor_4_lab import (gml4cat, gml5cat)
 device = ""
 clip_feat_dim = 0
 def _init_lseg():
-    crop_size = 480  # 480
-    base_size = 520  # 520
+    crop_size = 768  # 480
+    base_size = 1080  # 520
     global device
     global clip_feat_dim
     if torch.cuda.is_available():
@@ -57,7 +57,8 @@ def _init_lseg():
 if __name__ == "__main__":
     file_path = "/home/ws/dataset/HM3D_enviroment/vlmaps_dataset/5LpN3gDmAk7_1/rgb"
     # file_path = "/media/benny/bennyMove/data/collect_tran_vlmaps_data/"
-    rgb_file_name = "000039.png"
+    save_path = Path(file_path).parent / "semantic"
+    rgb_file_name = "000022.png"
     lseg_model, lseg_transform, crop_size, base_size, norm_mean, norm_std = _init_lseg()
     rgb_path = Path(file_path) / rgb_file_name
     bgr = cv2.imread(str(rgb_path))
@@ -65,6 +66,7 @@ if __name__ == "__main__":
     pix_feats = get_lseg_feat(
         lseg_model, rgb, mp3dcat_2[1:-1], lseg_transform, device, crop_size, base_size, norm_mean, norm_std, vis=True
     )
+
     # png_files = [f for f in os.listdir(file_path) if f.endswith('.png')]
     # png_files.sort()
     # for file in png_files:
@@ -73,5 +75,5 @@ if __name__ == "__main__":
     #         bgr= cv2.imread(str(rgb_path))
     #         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     #         pix_feats = get_lseg_feat(
-    #             lseg_model, rgb, gml5cat[1:-1], lseg_transform, device, crop_size, base_size, norm_mean, norm_std, vis=True
-    #         )
+    #             lseg_model, rgb, mp3dcat[1:-1], lseg_transform, device, crop_size, base_size, norm_mean, norm_std, vis=False, is_save=True, save_path=save_path, file_name=file)
+            

@@ -38,14 +38,14 @@ def get_heatmap_from_mask_3d(
     return heatmap.flatten()
 
 
-def visualize_masked_map_3d(pc: np.ndarray, mask: np.ndarray, rgb: np.ndarray, transparency: float = 0.5):
+def visualize_masked_map_3d(pc: np.ndarray, mask: np.ndarray, rgb: np.ndarray, transparency: float = 0.5, min_height=-1.55, max_height=3.0):
     heatmap = mask.astype(np.float16)
-    visualize_heatmap_3d(pc, heatmap, rgb, transparency)
+    visualize_heatmap_3d(pc, heatmap, rgb, transparency, min_height, max_height)
 
 
-def visualize_heatmap_3d(pc: np.ndarray, heatmap: np.ndarray, rgb: np.ndarray, transparency: float = 0.5):
+def visualize_heatmap_3d(pc: np.ndarray, heatmap: np.ndarray, rgb: np.ndarray, transparency: float = 0.5, min_height=-1.55, max_height=3.0):
     grid_height = pc[:, 2] * 0.05
-    grid_height_mask = np.logical_and(grid_height > -1.55, grid_height < 5.0)
+    grid_height_mask = np.logical_and(grid_height > min_height, grid_height < max_height)
     pc = pc[grid_height_mask, :]
     rgb = rgb[grid_height_mask, :]
     heatmap = heatmap[grid_height_mask]
@@ -119,10 +119,13 @@ def visualize_masked_map_2d(rgb: np.ndarray, mask: np.ndarray):
     """
     visualize_heatmap_2d(rgb, mask.astype(np.float32))
 
-def visualize_colored_point_cloud(pc: np.ndarray, scores_max: np.ndarray, categories: list):
+def visualize_colored_point_cloud(pc: np.ndarray, scores_max: np.ndarray, categories: list, min_height=-1.55, max_height=3.0):
     # 根据 target ID 分配颜色给点
     rgb = assign_colors_to_target_ids(scores_max, categories)
-
+    grid_height = pc[:, 2] * 0.05
+    grid_height_mask = np.logical_and(grid_height > min_height, grid_height < max_height)
+    pc = pc[grid_height_mask, :]
+    rgb = rgb[grid_height_mask, :]
     # 创建一个 Open3D 点云对象
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pc)
@@ -147,30 +150,44 @@ def assign_colors_to_target_ids(scores_max: np.ndarray, categories: list) -> np.
         categories.append('other')
 
     # 3. 取离散色盘（glasbey 共 256 色，>100 类也能区分）
-    cmap = cc.cm.glasbey_bw_minc_20           # 也可用 glasbey, glasbey_bw, glasbey_hv 等
-    colors = cmap(np.linspace(0, 1, max_id + 1))[:, :3]   # (max_id+1,3)
+    cmap = cc.cm.glasbey_bw_minc_20
+    colors = cmap(np.linspace(0, 1, max_id + 1))[:, :3]  # (max_id+1,3)
 
     # 4. 建立 id->color 映射并上色
     rgb_colors = colors[scores_max]
 
-    # 5. 画颜色图例
+    # 5. 使用 OpenCV 画颜色图例（垂直排列，水平文字）
     unique_ids = np.unique(scores_max)
-    fig, ax = plt.subplots(figsize=(max(6, len(unique_ids) * 0.5), 2))
-    bar_w = 0.8
-    for i, uid in enumerate(unique_ids):
-        ax.add_patch(
-            plt.Rectangle((i, 0), bar_w, 1,
-                          facecolor=colors[uid], edgecolor='k')
-        )
-        ax.text(i + bar_w / 2, 0.5, categories[uid],
-                ha='center', va='center', rotation=90,
-                color='white' if colors[uid][:3].sum() < 1.5 else 'black')
+    bar_height = 30  # 每个矩形的高度（像素）
+    bar_width = 100  # 矩形的宽度（像素）
+    img_height = len(unique_ids) * bar_height + 50  # 总高度，留点边距
+    img_width = bar_width + 50  # 总宽度，留点边距
+    img = np.ones((img_height, img_width, 3), dtype=np.uint8) * 255  # 白色背景
 
-    ax.set_xlim(-0.2, len(unique_ids))
-    ax.set_ylim(-0.2, 1.2)
-    ax.axis('off')
-    ax.set_title('Category Colors (colorcet glasbey)')
-    plt.tight_layout()
-    plt.show()
+    for i, uid in enumerate(unique_ids):
+        # 颜色从 [0,1] 转换为 [0,255]，RGB 转 BGR（OpenCV 使用 BGR）
+        color = (colors[uid][::-1] * 255).astype(np.uint8)  # RGB -> BGR
+        # 绘制矩形
+        top_left = (25, i * bar_height + 25)
+        bottom_right = (25 + bar_width, i * bar_height + 25 + bar_height)
+        cv2.rectangle(img, top_left, bottom_right, color.tolist(), -1)  # 填充矩形
+        cv2.rectangle(img, top_left, bottom_right, (0, 0, 0), 1)  # 黑色边框
+
+        # 添加文字
+        text = categories[uid]
+        text_color = (255, 255, 255) if colors[uid][:3].sum() < 1.5 else (0, 0, 0)  # 白或黑
+        text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        text_x = top_left[0] + (bar_width - text_size[0]) // 2
+        text_y = top_left[1] + (bar_height + text_size[1]) // 2
+        cv2.putText(img, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, text_color, 2)
+
+    # 添加标题
+    cv2.putText(img, "Category Colors (colorcet glasbey)", (25, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+
+    # 显示图像（非阻塞）
+    cv2.imshow("Category Colors", img)
+    cv2.waitKey()  # 短暂等待，使窗口显示但不阻塞
+    # 注意：窗口需要手动关闭，或者可以通过 cv2.destroyAllWindows() 关闭
 
     return rgb_colors

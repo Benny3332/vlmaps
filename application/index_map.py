@@ -32,7 +32,7 @@ def main(config: DictConfig) -> None:
     vlmap.load_map(data_dirs[config.scene_id])
     # visualize_rgb_map_3d(vlmap.grid_pos, vlmap.grid_rgb)
     # cat = input("What is your interested category in this scene?")
-    cat = "floor"
+    cat = "shelving"
     vlmap._init_clip()
     print("considering categories: ")
     print(mp3dcat[1:-1])
@@ -49,8 +49,8 @@ def main(config: DictConfig) -> None:
         heatmap = get_heatmap_from_mask_2d(mask_2d, cell_size=config.params.cs, decay_rate=config.decay_rate)
         visualize_heatmap_2d(rgb_2d, heatmap)
     else:
-        visualize_colored_point_cloud(vlmap.grid_pos, scores_max, vlmap.categories)
-        visualize_masked_map_3d(vlmap.grid_pos, mask, vlmap.grid_rgb)
+        visualize_colored_point_cloud(vlmap.grid_pos, scores_max, vlmap.categories, min_height=-1.55, max_height=2.0)
+        visualize_masked_map_3d(vlmap.grid_pos, mask, vlmap.grid_rgb, min_height=-1.55, max_height=2.0)
         # todo
         heatmap = get_heatmap_from_mask_3d(
             vlmap.grid_pos, mask, cell_size=config.params.cs, decay_rate=config.decay_rate

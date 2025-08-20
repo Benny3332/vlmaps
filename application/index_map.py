@@ -2,7 +2,7 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 from vlmaps.map.vlmap import VLMap
-from vlmaps.utils.matterport3d_categories import mp3dcat
+from vlmaps.utils.matterport3d_categories import mp3dcat, mp3dcat_2
 from vlmaps.utils.gml_floor_4_lab import gml4cat
 from vlmaps.utils.visualize_utils import (
     pool_3d_label_to_2d,
@@ -14,6 +14,7 @@ from vlmaps.utils.visualize_utils import (
     visualize_masked_map_3d,
     get_heatmap_from_mask_2d,
     get_heatmap_from_mask_3d,
+    visualize_colored_point_cloud
 )
 # from pycallgraph import PyCallGraph
 # from pycallgraph.output import GraphvizOutput
@@ -29,17 +30,17 @@ def main(config: DictConfig) -> None:
     print(data_dirs[config.scene_id])
     vlmap = VLMap(config.map_config, data_dir=data_dirs[config.scene_id])
     vlmap.load_map(data_dirs[config.scene_id])
-    visualize_rgb_map_3d(vlmap.grid_pos, vlmap.grid_rgb)
+    # visualize_rgb_map_3d(vlmap.grid_pos, vlmap.grid_rgb)
     # cat = input("What is your interested category in this scene?")
-    cat = "cushion"
+    cat = "floor"
     vlmap._init_clip()
     print("considering categories: ")
     print(mp3dcat[1:-1])
     if config.init_categories:
-        vlmap.init_categories(mp3dcat[1:-1])
-        mask = vlmap.index_map(cat, with_init_cat=True)
+        vlmap.init_categories(mp3dcat_2[1:-1])
+        mask, scores_max = vlmap.index_map_v2(cat, with_init_cat=True)
     else:
-        mask = vlmap.index_map(cat, with_init_cat=False)
+        mask, scores_max = vlmap.index_map_v2(cat, with_init_cat=False)
 
     if config.index_2d:
         mask_2d = pool_3d_label_to_2d(mask, vlmap.grid_pos, config.params.gs)
@@ -48,6 +49,7 @@ def main(config: DictConfig) -> None:
         heatmap = get_heatmap_from_mask_2d(mask_2d, cell_size=config.params.cs, decay_rate=config.decay_rate)
         visualize_heatmap_2d(rgb_2d, heatmap)
     else:
+        visualize_colored_point_cloud(vlmap.grid_pos, scores_max, vlmap.categories)
         visualize_masked_map_3d(vlmap.grid_pos, mask, vlmap.grid_rgb)
         # todo
         heatmap = get_heatmap_from_mask_3d(

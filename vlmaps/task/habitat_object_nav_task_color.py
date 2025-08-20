@@ -79,6 +79,13 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
             logging.error("Call get_all_objects() before calling get_class_objects()")
             raise
 
+    def get_class_objects_by_id(self, object_id):
+        try:
+            return [x for x in self.same_floor_objects_list if x.id == object_id]
+        except NameError:
+            logging.error("Call get_all_objects() before calling get_class_objects()")
+            raise
+
     def find_closest_object_from_class(self, class_name: str, pos_hab: np.array):
         """
         pos_hab: 3d position in habitat world frame
@@ -96,7 +103,25 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
         closest_obj = class_objects[ranks[0]]
         closest_dist = dists_list[ranks[0]]
         return closest_obj, closest_dist
+    
+    def find_object_by_id_from_class(self, object_id: str, pos_hab: np.array):
+        """
+        pos_hab: 3d position in habitat world frame
+        """
+        class_objects = self.get_class_objects_by_id(object_id)
+        logging.info(f"object_id : {object_id}")
+        dists_list = []
+        for object in class_objects:
+            obj_pos = object.aabb.center
+            obj_size = object.aabb.sizes
+            dist = get_dist_to_bbox_2d(obj_pos[[0, 2]], obj_size[[0, 2]], pos_hab[[0, 2]])
+            dists_list.append(dist)
 
+        ranks = np.argsort(np.array(dists_list))
+        closest_obj = class_objects[ranks[0]]
+        closest_dist = dists_list[ranks[0]]
+        return closest_obj, closest_dist
+    
     def visualize_closest_object(self, robot: HabitatLanguageRobot, target_object: dict, vis: bool = False):
         obj_id = target_object["object_id"]
         obj_name = target_object["name"]
@@ -206,7 +231,7 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
                 agent_position = np.array(agent_state.position, dtype=np.float32)
             
             next_subgoal_name = self.goal_classes[self.curr_subgoal_id]
-            
+            self.get_all_objects(sim)
             # Find the object in objects_info matching the current subgoal name
             target_object = None
             for obj in self.objects_info:
@@ -222,33 +247,19 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
                     obs = sim.get_sensor_observations(0)
                     display_sample({}, obs["color_sensor"], waitkey=True)
                 return
-
+            closest_object, closest_dist = self.search_calculate_distance_object_by_id(robot, target_object["object_id"], agent_position, vis)
             # Extract object position and radius
-            object_position = np.array(target_object["position"], dtype=np.float32)
-            object_radius = float(target_object["radius"])
-
-            # Calculate 2D Euclidean distance (ignoring height)
-            distance_2d = np.sqrt(
-                (agent_position[0] - object_position[0])**2 +
-                (agent_position[2] - object_position[2])**2
-            )
-            
-            # Adjust distance by subtracting object radius
-            adjusted_distance = max(0.0, distance_2d - object_radius)
-            
-            # Check height difference to ensure same floor (within 1m)
-            height_diff = abs(agent_position[1] - object_position[1])
-            is_same_floor = height_diff <= 1.0
-            
-            self.distance_to_subgoals.append(adjusted_distance)
+            # adjusted_distance, height_diff = self.calculate_dist_base_position(agent_position, target_object)
+            logging.info(f"Closest object: {closest_object.category.name()} id: {closest_object.id}")
+            self.distance_to_subgoals.append(closest_dist)
             
             # Evaluate success: distance < 1m and on the same floor
             # if adjusted_distance < 1.0 and is_same_floor:
-            if adjusted_distance < 1.0:
+            if closest_dist < 1.0:
                 self.finished_subgoals.append(self.curr_subgoal_id)
-                logging.info(f"###({self.curr_subgoal_id + 1}/{self.n_subgoals_in_task}) {next_subgoal_name} reached! Distance: {adjusted_distance:.2f}m, Height diff: {height_diff:.2f}m.###")
+                logging.info(f"###({self.curr_subgoal_id + 1}/{self.n_subgoals_in_task}) {next_subgoal_name} reached! Distance: {closest_dist:.2f}m###")
             else:
-                logging.info(f"###({self.curr_subgoal_id + 1}/{self.n_subgoals_in_task}) {next_subgoal_name} unreached! Distance: {adjusted_distance:.2f}m, Height diff: {height_diff:.2f}m.###")
+                logging.info(f"###({self.curr_subgoal_id + 1}/{self.n_subgoals_in_task}) {next_subgoal_name} unreached! Distance: {closest_dist:.2f}m###")
             if vis:
                 self.visualize_closest_object(robot, target_object, vis)
             self.curr_subgoal_id += 1
@@ -272,6 +283,24 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
                 self.success = True
                 self.n_success_tasks += 1
             self.subgoal_success_rate = float(len(self.finished_subgoals)) / self.n_subgoals_in_task
+
+    def calculate_dist_base_position(self, agent_position, target_object):
+        object_position = np.array(target_object["position"], dtype=np.float32)
+        object_radius = float(target_object["radius"])
+            
+            # Calculate 2D Euclidean distance (ignoring height)
+        distance_2d = np.sqrt(
+                (agent_position[0] - object_position[0])**2 +
+                (agent_position[2] - object_position[2])**2
+            )
+            
+            # Adjust distance by subtracting object radius
+        adjusted_distance = max(0.0, distance_2d - object_radius)
+            
+            # Check height difference to ensure same floor (within 1m)
+        height_diff = abs(agent_position[1] - object_position[1])
+        is_same_floor = height_diff <= 1.0
+        return adjusted_distance,height_diff
     
     def save_single_task_metric(
         self,
@@ -356,6 +385,48 @@ class HabitatObjectNavigationTaskColor(HabitatTask):
             # cv2.waitKey()
 
         return closest_obj, closest_dist
+    
+    def search_calculate_distance_object_by_id(self, robot: HabitatLanguageRobot, object_id: str, pos_hab: np.ndarray, vis: bool = False):
+        closest_obj, closest_dist = self.find_object_by_id_from_class(object_id, pos_hab)
+        obj_pos = closest_obj.aabb.center  # 3D 世界坐标
+        map = robot.map
+        # 转换为 2D 网格坐标
+        row, col = self.world_to_grid(robot, obj_pos)
+        logging.info(f"Object 3D position: [{obj_pos[0]:.3f}, {obj_pos[1]:.3f}, {obj_pos[2]:.3f}], Grid (row, col): ({row}, {col})")
+
+        # 转换为裁剪图像坐标
+        row_local = row - map.rmin
+        col_local = col - map.cmin
+        logging.info(f"Local (row, col): ({row_local}, {col_local})")
+
+        # 可视化
+        if vis:
+            obs_map = map.get_customized_obstacle_cropped()
+            if obs_map is None or obs_map.size == 0:
+                logging.info("Error: obs_map is empty or invalid!")
+                return
+            # 创建三通道 BGR 图像
+            obs_map_vis = (obs_map * 255).astype(np.uint8)
+            obs_map_vis = np.stack([obs_map_vis] * 3, axis=-1)
+
+            # 绘制物体中心点（红色）
+            cv2.circle(
+                obs_map_vis,
+                (col_local, row_local),
+                radius=5,
+                color=(0, 0, 255),
+                thickness=-1
+            )
+
+            # 保存图像以供调试
+            # cv2.imwrite("debug_output.png", obs_map_vis)
+
+            # 显示最终图像
+            cv2.imshow("Closest Object Visualization", obs_map_vis)
+            # cv2.waitKey()
+
+        return closest_obj, closest_dist
+
     def world_to_grid(self, robot: HabitatLanguageRobot, pos_3d: np.ndarray) -> Tuple[int, int]:
         """
         Convert Habitat world position to cropped grid coordinates (row, col)

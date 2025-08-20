@@ -3,7 +3,7 @@ import openai
 import httpx
 import re
 from typing import List, Tuple
-
+from vlmaps.utils.color_dict import iscc_nbs_colors
 def parse_object_goal_instruction_deprecated(language_instr):
     """
     [deprecated]: only for older version of OpenAI API
@@ -47,7 +47,7 @@ def parse_object_goal_instruction(language_instr):
     openai.api_key = openai_key
     client = openai.OpenAI(api_key=openai_key, base_url='https://dashscope.aliyuncs.com/compatible-mode/v1', http_client=httpx.Client(trust_env=False))
     response = client.chat.completions.create(
-        model="qwen-turbo",
+        model="qwen3-32b",
         messages=[
             {
                 "role": "user",
@@ -150,7 +150,7 @@ def parse_color_object_goal_instruction(language_instr):
 
     # Updated prompt instructing LLM to return objects with RGB values for ISCC-NBS colors
     response = client.chat.completions.create(
-        model="qwen-turbo",
+        model="qwen3-32b",
         messages=[
             {
                 "role": "system",
@@ -279,7 +279,7 @@ def parse_color_object_goal_instruction_v2(objects_info: List[dict], classes_lis
 
         # Use LLM to verify object name and convert color_name to RGB
         response = client.chat.completions.create(
-            model="qwen-turbo",
+            model="qwen3-32b",
             messages=[
                 {
                     "role": "system",
@@ -323,6 +323,7 @@ def parse_color_object_goal_instruction_v2(objects_info: List[dict], classes_lis
                 }
             ],
             max_tokens=300,
+            extra_body={"enable_thinking": False}
         )
 
         # Parse LLM response
@@ -361,6 +362,122 @@ def parse_color_object_goal_instruction_v2(objects_info: List[dict], classes_lis
             print(f"Error: Invalid LLM response format for {obj_name}: {text}. Expected format 'object:[R,G,B]' or 'object:[R1,G1,B1],[R2,G2,B2]'. Skipping.")
 
     return object_categories, colors_rgb
+
+def parse_color_object_goal_instruction_v3(objects_info: List[dict], classes_list: List[str]) -> Tuple[List[str], List[List[List[int]]]]:
+    # Initialize OpenAI client
+    openai_key = os.environ["DASHSCOPE_API_KEY"]
+    client = openai.OpenAI(
+        api_key=openai_key,
+        base_url='https://dashscope.aliyuncs.com/compatible-mode/v1',
+        http_client=httpx.Client(trust_env=False)
+    )
+
+    # Initialize output lists
+    object_categories = []
+    colors_text = []
+
+    # Prepare classes list for LLM query
+    classes_list_str = ",".join(classes_list)
+
+    for obj_info in objects_info:
+        obj_name = obj_info["name"]
+        color_name = obj_info["color_name"]
+
+        # Use LLM to verify object name and extract ISCC-NBS color names
+        response = client.chat.completions.create(
+            model="qwen3-32b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert in ISCC-NBS color nomenclature and object categorization. For the given object and color description, extract the object name and identify any ISCC-NBS color names present in the description. Return the result in the format: 'object:color1' for one color, or 'object:color1,color2' for two colors. If multiple colors are present (e.g., 'dark grayish and olive-green'), return them as a comma-separated list. If the object is not in the provided list, return the most relevant category from the list. Ensure color names are valid ISCC-NBS terms."
+                },
+                {
+                    "role": "user",
+                    "content": "What is television most relevant to among tv_monitor,plant,chair, and identify ISCC-NBS color in dark-gray"
+                },
+                {
+                    "role": "assistant",
+                    "content": "tv_monitor:dark-gray"
+                },
+                {
+                    "role": "user",
+                    "content": "What is drawer most relevant to among tv_monitor,chest_of_drawers,chair, and identify ISCC-NBS color in light-blue"
+                },
+                {
+                    "role": "assistant",
+                    "content": "chest_of_drawers:light-blue"
+                },
+                {
+                    "role": "user",
+                    "content": "What is cushion most relevant to among counter,table,chair,cushion on the sofa, and identify ISCC-NBS colors in dark grayish olive-green cushion"
+                },
+                {
+                    "role": "assistant",
+                    "content": "cushion on the sofa:dark grayish olive-green"
+                },
+                {
+                    "role": "user",
+                    "content": "What is sink most relevant to among sink on the counter,counter,table,chair, and identify ISCC-NBS colors in brownish-black and grayish-green sink"
+                },
+                {
+                    "role": "assistant",
+                    "content": "sink on the counter:brownish-black,grayish-green"
+                },
+                {
+                    "role": "user",
+                    "content": "What is shelving most relevant to among shelving,counter,table,chair, and identify ISCC-NBS colors dark grayish reddish-brown shelving"
+                },
+                {
+                    "role": "assistant",
+                    "content": "shelving:dark grayish reddish-brown"
+                },
+                {
+                    "role": "user",
+                    "content": f"What is {obj_name} most relevant to among {classes_list_str}, and identify ISCC-NBS color in {color_name}"
+                }
+            ],
+            max_tokens=300,
+            extra_body={"enable_thinking": False}
+        )
+
+        # Parse LLM response
+        text = response.choices[0].message.content.strip()
+        print(f"LLM response for {obj_name}: {text}")
+
+        # Regex to match 'object:color1' or 'object:color1,color2'
+        pattern = re.compile(r'^([\w\s]+?):([a-zA-Z\s\-]+)(?:,([a-zA-Z\s\-]+))?$')
+        match = pattern.match(text)
+
+        if match:
+            matched_category = match.group(1).strip()
+            color_list = []
+
+            # Extract first color
+            color1 = match.group(2).strip()
+            if color1 in iscc_nbs_colors:
+                color_list.append(list(iscc_nbs_colors[color1]))
+            else:
+                print(f"Warning: Color '{color1}' for {obj_name} not found in iscc_nbs_colors. Skipping object.")
+                continue
+
+            # Extract second color if present
+            if match.group(3):
+                color2 = match.group(3).strip()
+                if color2 in iscc_nbs_colors:
+                    color_list.append(list(iscc_nbs_colors[color2]))  # ✅ 转换成RGB
+                else:
+                    print(f"Warning: Color '{color2}' for {obj_name} not found in iscc_nbs_colors. Using only first color.")
+
+            # Only keep valid categories
+            if matched_category in classes_list:
+                object_categories.append(matched_category)
+                colors_text.append(color_list)
+            else:
+                print(f"Warning: LLM returned {matched_category} which is not in classes_list for {obj_name}. Skipping.")
+        else:
+            print(f"Error: Invalid LLM response format for {obj_name}: {text}. Expected format 'object:color1' or 'object:color1,color2'. Skipping.")
+
+    return object_categories, colors_text
 
 
 def parse_spatial_instruction_deprecated(language_instr):
@@ -521,7 +638,7 @@ def parse_spatial_instruction(language_instr):
     for lang in instructions_list:
         client = openai.OpenAI(api_key=openai_key, base_url='https://dashscope.aliyuncs.com/compatible-mode/v1', http_client=httpx.Client(trust_env=False))
         response = client.chat.completions.create(
-            model="qwen-turbo",
+            model="qwen3-32b",
             messages=[
                 {"role": "user", "content": "move a bit to the right of the refrigerator"},
                 {"role": "assistant", "content": "robot.move_to_right('refrigerator')"},

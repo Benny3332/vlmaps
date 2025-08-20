@@ -158,7 +158,7 @@ def closest_iscc_nbs_color(rgb):
             closest_name = name
     return closest_name
 
-def extract_main_colors(object_pixels, n_colors=2, dominant_threshold=0.9):
+def extract_main_colors(object_pixels, n_colors=2, dominant_threshold=0.75):
     """
     使用K-means聚类提取主色和次主色，并返回颜色名称
     
@@ -423,7 +423,7 @@ def main(config: DictConfig) -> None:
         sim = habitat_sim.Simulator(cfg)
         agent = sim.initialize_agent(sim_setting["default_agent"])
         agent_state = habitat_sim.AgentState()
-        pose = [-16.01954769804786,	3.456643581390381,	17.023437820013946,	0.0,	0.0,	0.0,	1.0]
+        pose = [8.37611198425293,	-1.2843499183654785,	7.724077224731445,	0.0,	0.0,	0.0,	1.0]
         agent_state.position = pose[:3]
         agent_state.rotation = pose[3:]
         agent.set_state(agent_state)

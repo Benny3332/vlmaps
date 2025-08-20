@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union, Set
-
+import logging
 from tqdm import tqdm
 import cv2
 import torchvision.transforms as transforms
@@ -20,9 +20,10 @@ from vlmaps.utils.mapping_utils import (
     base_pos2grid_id_3d_2,
     project_point,
     get_sim_cam_mat,
+    map_coordinates
 )
 from vlmaps.lseg.modules.models.lseg_net import LSegEncNet
-
+from vlmaps.utils.matterport3d_categories import (mp3dcat, mp3dcat_2)
 
 def visualize_pc(pc: np.ndarray):
     pcd = o3d.geometry.PointCloud()
@@ -62,7 +63,7 @@ class VLMapBuilder2:
         cs = self.map_config.cell_size
         gs = self.map_config.grid_size
         depth_sample_rate = self.map_config.depth_sample_rate
-
+        logging.info(f"depth_sample_rate: {depth_sample_rate}")
         # 加载基本姿态数据
         self.base_poses = np.loadtxt(self.pose_path)
 
@@ -139,7 +140,7 @@ class VLMapBuilder2:
             # 获取与像素对齐的LSeg特征
             # # get pixel-aligned LSeg features
             pix_feats = get_lseg_feat(
-                lseg_model, rgb, ["example"], lseg_transform, self.device, crop_size, base_size, norm_mean, norm_std
+                lseg_model, rgb, mp3dcat_2[1:-1], lseg_transform, self.device, crop_size, base_size, norm_mean, norm_std
             )
             pix_feats_intr = get_sim_cam_mat(pix_feats.shape[2], pix_feats.shape[3])
 
@@ -314,8 +315,8 @@ class VLMapBuilder2:
         return vh, grid_feat, grid_pos, weight, occupied_ids, grid_rgb, mapped_iter_set, max_id
 
     def _init_lseg(self):
-        crop_size = 480  # 480
-        base_size = 520  # 520
+        crop_size = 768  # 480
+        base_size = 800  # 520
         if torch.cuda.is_available():
             self.device = "cuda:1"
         elif torch.backends.mps.is_available():

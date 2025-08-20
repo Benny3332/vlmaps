@@ -2,7 +2,7 @@ vlmaps_data_dir: /home/ws/dataset/HM3D_enviroment/lvlmaps_dataset
 habitat_scene_dir: /home/ws/dataset/HM3D_enviroment/v1/tasks/mp3d
 task_dir: /home/ws/dataset/hm3d_color_dataset
 scene_names:
-  - gTV8FGcVJC9
+  - 5LpN3gDmAk7
 data_cfg:
   rgb: true
   depth: true

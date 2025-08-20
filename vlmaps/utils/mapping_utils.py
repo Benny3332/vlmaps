@@ -29,6 +29,17 @@ def cvt_pose_vec2tf(pos_quat_vec: np.ndarray) -> np.ndarray:
     # pose_tf[:3, :3] = rot.as_matrix()
     return pose_tf
 
+def map_coordinates(original_shape, feature_map_shape, original_coords):
+    original_height, original_width = original_shape
+    feature_map_height, feature_map_width = feature_map_shape
+
+    scale_x = feature_map_width / original_width
+    scale_y = feature_map_height / original_height
+
+    fx = int(original_coords[0] * scale_x)
+    fy = int(original_coords[1] * scale_y)
+
+    return fx, fy
 
 def load_ai2thor_pose(pose_filepath):
     with open(pose_filepath, "r") as f:

@@ -1,11 +1,13 @@
 import numpy as np
 import cv2
 from scipy.spatial.distance import cdist
+from scipy.ndimage import label
 import pyvisgraph as vg
 import matplotlib.pyplot as plt
 from PIL import Image
 from typing import Tuple, List, Dict
-
+import logging
+import time
 
 def get_segment_islands_pos(segment_map, label_id, detect_internal_contours=False):
     mask = segment_map == label_id
@@ -203,6 +205,272 @@ def plan_to_pos_v2(start, goal, obstacles, G: vg.VisGraph = None, vis=False):
         cv2.waitKey()
 
     return path
+
+def adjust_if_in_obstacle(point, obstacles, min_region_size=50, max_distance=10):
+    """
+    如果点在障碍物里，将其调整到一个合理的自由点，优先选择与原始点较近的点。
+    - point: numpy array [row, col]
+    - obstacles: 2D numpy array, 0=障碍物, 1=自由空间
+    - min_region_size: 连通区域最小像素数
+    - max_distance: 最大允许距离（像素），超过则随机选择
+    """
+    point = np.array(point)
+    r, c = int(point[0]), int(point[1])
+
+    if obstacles[r, c] > 0:
+        return point  # 已经在自由空间，无需调整
+
+    # 标记自由空间连通区域
+    free_space = obstacles > 0
+    labeled, num_features = label(free_space)
+
+    tried_labels = set()
+    height, width = obstacles.shape
+
+    # 找到地图中所有自由点
+    free_rows, free_cols = np.where(free_space)
+    free_points = np.column_stack((free_rows, free_cols))
+
+    # 计算所有自由点与原始点的欧几里得距离
+    distances = np.sqrt(np.sum((free_points - point) ** 2, axis=1))
+
+    while True:
+        # 按距离排序，选择最近的点
+        sorted_indices = np.argsort(distances)
+        for idx in sorted_indices:
+            new_r, new_c = free_points[idx]
+            region_label = labeled[new_r, new_c]
+
+            # 避免重复尝试同一个小区域
+            if region_label in tried_labels:
+                continue
+
+            region_size = np.sum(labeled == region_label)
+
+            if region_size >= min_region_size:
+                # 检查距离是否在 max_distance 内
+                if distances[idx] <= max_distance:
+                    return np.array([new_r, new_c])
+                else:
+                    # 如果所有近点都不合适，随机返回一个符合条件的点
+                    return np.array([new_r, new_c])
+
+            tried_labels.add(region_label)
+
+        # 如果循环结束仍未找到，随机选择一个符合条件的点
+        idx = np.random.randint(0, len(free_rows))
+        new_r, new_c = free_rows[idx], free_cols[idx]
+        region_label = labeled[new_r, new_c]
+        if region_label not in tried_labels and np.sum(labeled == region_label) >= min_region_size:
+            return np.array([new_r, new_c])
+
+def plan_to_pos_v3(start, goal, obstacles, vis=False):
+    """
+    Plan a path using RRT* (Rapidly-exploring Random Tree Star).
+    Start and goal are (row, col) in the map.
+    obstacles: 2D numpy array (0 = obstacle, 1 = free space).
+    """
+
+    # 转成 numpy 数组
+    start = np.array(start)
+    goal = np.array(goal)
+
+    start = adjust_if_in_obstacle(start, obstacles)
+    goal = adjust_if_in_obstacle(goal, obstacles)
+
+    # 碰撞检测函数
+    def is_collision_free(p1, p2, obs):
+        p1 = np.array(p1)
+        p2 = np.array(p2)
+        direction = p2 - p1
+        distance = np.linalg.norm(direction)
+        if distance < 1e-6:
+            return True
+        direction /= distance
+        num_samples = int(distance * 2) + 2
+        for i in range(num_samples):
+            point = p1 + (i / (num_samples - 1)) * (p2 - p1)
+            r = int(np.round(point[0]))
+            c = int(np.round(point[1]))
+            if r < 0 or r >= obs.shape[0] or c < 0 or c >= obs.shape[1] or obs[r, c] == 0:
+                return False
+        return True
+
+    # 参数
+    max_iter = 10000
+    step_size = 15.0
+    goal_sample_prob = 0.05
+    goal_threshold = 2.0
+    rewire_radius = 15.0
+    height, width = obstacles.shape
+    vis_interval = 200
+
+    # 初始化树
+    tree = [start]
+    parents = [-1]
+    costs = [0.0]
+
+    # 可视化底图
+    if True:
+        obs_map_vis = (obstacles[:, :, None] * 255).astype(np.uint8)
+        obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
+        obs_map_vis = cv2.circle(obs_map_vis, (int(start[1]), int(start[0])), 3, (255, 0, 0), -1)
+        obs_map_vis = cv2.circle(obs_map_vis, (int(goal[1]), int(goal[0])), 3, (0, 0, 255), -1)
+    start_time = time.perf_counter()
+    for i in range(max_iter):
+        # 采样
+        if np.random.rand() < goal_sample_prob:
+            sample = goal
+        else:
+            sample = np.random.uniform(0, [height, width])
+
+        r, c = int(sample[0]), int(sample[1])
+        if r < 0 or r >= height or c < 0 or c >= width or obstacles[r, c] == 0:
+            continue
+
+        # 最近点
+        tree_array = np.stack(tree)
+        dists = cdist(sample.reshape(1, 2), tree_array)
+        nearest_idx = np.argmin(dists)
+        nearest = tree[nearest_idx]
+
+        # 扩展
+        dir_vec = sample - nearest
+        dist = np.linalg.norm(dir_vec)
+        if dist > step_size:
+            new_pos = nearest + (dir_vec / dist) * step_size
+        else:
+            new_pos = sample
+
+        if not is_collision_free(nearest, new_pos, obstacles):
+            continue
+
+        # Step 1: 找邻居
+        dists_new = cdist(new_pos.reshape(1, 2), tree_array)[0]
+        neighbor_idx = np.where(dists_new < rewire_radius)[0]
+
+        # Step 2: 选择父节点（最小代价）
+        min_cost = costs[nearest_idx] + np.linalg.norm(new_pos - nearest)
+        best_parent = nearest_idx
+        for ni in neighbor_idx:
+            if is_collision_free(tree[ni], new_pos, obstacles):
+                new_cost = costs[ni] + np.linalg.norm(new_pos - tree[ni])
+                if new_cost < min_cost:
+                    min_cost = new_cost
+                    best_parent = ni
+
+        # Step 3: 插入新节点
+        tree.append(new_pos)
+        parents.append(best_parent)
+        costs.append(min_cost)
+        new_idx = len(tree) - 1
+
+        # Step 4: 重连 (Rewire)
+        for ni in neighbor_idx:
+            if ni == best_parent:
+                continue
+            if is_collision_free(new_pos, tree[ni], obstacles):
+                new_cost = costs[new_idx] + np.linalg.norm(tree[ni] - new_pos)
+                if new_cost < costs[ni]:
+                    parents[ni] = new_idx
+                    costs[ni] = new_cost
+
+        # Step 5: 检查是否到达目标
+        if np.linalg.norm(new_pos - goal) < goal_threshold:
+            if is_collision_free(new_pos, goal, obstacles):
+                tree.append(goal)
+                parents.append(new_idx)  # ✅ 修复死循环：goal 的父节点是 new_pos
+                costs.append(costs[new_idx] + np.linalg.norm(goal - new_pos))
+                break
+
+        # 可视化生长
+        if vis and (i + 1) % vis_interval == 0:
+            logging.info(f"Visualizing tree {i + 1}...")
+            temp_map = obs_map_vis.copy()
+            for idx, node in enumerate(tree):
+                node_pos = (int(node[1]), int(node[0]))
+                temp_map = cv2.circle(temp_map, node_pos, 1, (0, 255, 255), -1)
+                if parents[idx] != -1:
+                    parent_pos = (int(tree[parents[idx]][1]), int(tree[parents[idx]][0]))
+                    temp_map = cv2.line(temp_map, parent_pos, node_pos, (0, 255, 255), 1)
+            cv2.imshow("RRT* Tree Growth", temp_map)
+            cv2.waitKey(1)
+
+    # 路径回溯
+    path = []
+    if len(tree) > 1 and np.linalg.norm(tree[-1] - goal) < goal_threshold + 1e-6:
+        current = len(tree) - 1
+        while current != -1:
+            path.append(tree[current].tolist())
+            current = parents[current]
+        path.reverse()
+    else:
+        print("No path found after max iterations")
+        return []
+    
+    path = optimize_path_with_clearance(path, obstacles, safe_margin=3)
+    end_time = time.perf_counter()
+    processing_time = end_time - start_time
+    logging.info(f"'############ RRT star run time:':{processing_time:.3f} seconds############")
+    # 可视化最终路径
+    if True:
+        for i, point in enumerate(path):
+            subgoal = (int(point[1]), int(point[0]))
+            obs_map_vis = cv2.circle(obs_map_vis, subgoal, 3, (255, 0, 0), -1)
+            if i > 0:
+                last_subgoal = (int(path[i - 1][1]), int(path[i - 1][0]))
+                cv2.line(obs_map_vis, last_subgoal, subgoal, (255, 0, 0), 2)
+        obs_map_vis = cv2.circle(obs_map_vis, (int(start[1]), int(start[0])), 5, (0, 255, 0), -1)
+        obs_map_vis = cv2.circle(obs_map_vis, (int(goal[1]), int(goal[0])), 5, (0, 0, 255), -1)
+        cv2.imshow("Final RRT* Path", obs_map_vis)
+        cv2.waitKey()
+
+    return path
+
+def optimize_path_with_clearance(path, obstacles, safe_margin=5):
+    """
+    调整路径，使其点尽量远离障碍物 safe_margin 像素
+    """
+    path = np.array(path)
+
+    # 计算距离场 (自由空间到障碍物的最短距离)
+    obs_uint8 = (obstacles == 0).astype(np.uint8)  # 障碍物=1
+    dist_map = cv2.distanceTransform(1 - obs_uint8, cv2.DIST_L2, 3)
+
+    # 优化后的路径
+    new_path = []
+    for point in path:
+        r, c = int(point[0]), int(point[1])
+        if r < 0 or r >= dist_map.shape[0] or c < 0 or c >= dist_map.shape[1]:
+            new_path.append(point)
+            continue
+
+        # 当前点到障碍物的距离
+        d = dist_map[r, c]
+        if d >= safe_margin:
+            new_path.append(point)
+            continue
+
+        # 梯度方向（远离障碍物的方向）
+        gx = dist_map[min(r+1, dist_map.shape[0]-1), c] - dist_map[max(r-1,0), c]
+        gy = dist_map[r, min(c+1, dist_map.shape[1]-1)] - dist_map[r, max(c-1,0)]
+        grad = np.array([gx, gy], dtype=float)
+
+        if np.linalg.norm(grad) > 1e-6:
+            grad /= np.linalg.norm(grad)
+            shift = (safe_margin - d) * grad
+            new_r = int(np.clip(r + shift[0], 0, dist_map.shape[0]-1))
+            new_c = int(np.clip(c + shift[1], 0, dist_map.shape[1]-1))
+
+            # 确保新点不在障碍物里
+            if obstacles[new_r, new_c] == 1:
+                new_path.append([new_r, new_c])
+            else:
+                new_path.append(point)  # 移动失败，保留原点
+        else:
+            new_path.append(point)
+
+    return np.array(new_path).tolist()
 
 
 def get_bbox(center, size):

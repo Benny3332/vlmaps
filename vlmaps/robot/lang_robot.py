@@ -69,7 +69,14 @@ class LangRobot:
         """
         # check if the pos is None
         return NotImplementedError
-
+    
+    def move_to_v2(self, pos: Tuple[float, float]):
+        """
+        Move the robot to the position on the map
+        based on accurate localization in the environment
+        """
+        # check if the pos is None
+        return NotImplementedError
     def turn(self, angle_deg: float):
         return NotImplementedError
         # actions_list = self.nav.turn(angle_deg)
@@ -184,7 +191,7 @@ class LangRobot:
         self._set_nav_curr_pose()
         # color_list = [[56,98,173]]
         pos = self.map.get_nearest_and_similarity_color_pos(self.curr_pos_on_map, name, color_list, 0.975, vis)
-        self.move_to(pos)
+        self.move_to_v2(pos)
 
     def move_forward(self, meters: float):
         self._set_nav_curr_pose()

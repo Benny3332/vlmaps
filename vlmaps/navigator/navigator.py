@@ -1,6 +1,6 @@
 import numpy as np
 import pyvisgraph as vg
-from vlmaps.utils.navigation_utils import build_visgraph_with_obs_map, plan_to_pos_v2
+from vlmaps.utils.navigation_utils import build_visgraph_with_obs_map, plan_to_pos_v2, plan_to_pos_v3
 from typing import Tuple, List, Dict
 
 
@@ -27,6 +27,21 @@ class Navigator:
         if self._check_if_start_in_graph_obstacle(start):
             self._rebuild_visgraph(start, vis)
         paths = plan_to_pos_v2(start, goal, self.obs_map, self.visgraph, vis)
+        paths = self.shift_path(paths, self.rowmin, self.colmin)
+        return paths
+
+    def plan_to_v2(
+        self, start_full_map: Tuple[float, float], goal_full_map: Tuple[float, float], vis: bool = False
+    ) -> List[List[float]]:
+        """
+        Take full map start (row, col) and full map goal (row, col) as input
+        Return a list of full map path points (row, col) as the palnned path
+        """
+        start = self._convert_full_map_pos_to_cropped_map_pos(start_full_map)
+        goal = self._convert_full_map_pos_to_cropped_map_pos(goal_full_map)
+        if self._check_if_start_in_graph_obstacle(start):
+            self._rebuild_visgraph(start, vis)
+        paths = plan_to_pos_v3(start, goal, self.passable_map, vis)
         paths = self.shift_path(paths, self.rowmin, self.colmin)
         return paths
 

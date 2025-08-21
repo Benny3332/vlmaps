@@ -252,7 +252,7 @@ class VLMap(Map):
             self.map_config.dilate_iter,
             self.map_config.gaussian_sigma,
         )
-        
+
         self.obstacles_new_cropped = self.obstacles_new_cropped == 0
 
         envelope_map_reverse = ~self.envelope_cropped
@@ -262,9 +262,9 @@ class VLMap(Map):
             self.map_config.gaussian_sigma,
             use_dilation=False,
         )
-        self.obstacles_union = ~(np.logical_or(self.obstacles_new_cropped == 0, envelope_cropped_filter ==0))
+        self.passable_map = ~(np.logical_or(self.obstacles_new_cropped == 0, envelope_cropped_filter ==0))
         if vis:
-            cv2.imshow("Safe Passable Area", (self.obstacles_union * 255).astype(np.uint8))
+            cv2.imshow("Safe Passable Area", (self.passable_map * 255).astype(np.uint8))
         return
         #可通行区域
         combined_potential_classes = list(set(self.map_config.potential_obstacle_names + self.map_config.passable_names))

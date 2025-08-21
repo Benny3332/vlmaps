@@ -99,7 +99,7 @@ class HabitatLanguageRobot(LangRobot):
             use_internal_contour = self.config["nav"]["use_internal_contour"],
             detect_internal_contours = self.config["nav"]["detect_internal_contours"]
         )
-
+        self.nav.passable_map = self.map.passable_map
         # self._setup_localizer(vlmaps_data_dir)
 
     def setup_map(self, vlmaps_data_dir: str):
@@ -450,6 +450,38 @@ class HabitatLanguageRobot(LangRobot):
         curr_pose_on_full_map = self.get_agent_pose_on_map()  # (row, col, angle_deg) on full map
         # print(f"self.config[\"nav\"][\"vis\"] : {self.config['nav']['vis']}")
         paths = self.nav.plan_to(
+            curr_pose_on_full_map[:2], pos, vis=self.config["nav"]["plann_vis"]
+        )  # take (row, col) in full map
+        # print(paths)
+        actions_list, poses_list = self.controller.convert_paths_to_actions(curr_pose_on_full_map, paths[1:])
+        success, real_actions_list = self.execute_actions(actions_list, poses_list, vis=self.config["nav"]["plann_vis"])
+        actual_actions_list.extend(real_actions_list)
+
+        actual_actions_list.append("stop")
+
+        if not hasattr(self, "recorded_actions_list"):
+            self.recorded_actions_list = []
+        self.recorded_actions_list.extend(actual_actions_list)
+
+        return actual_actions_list
+
+    def move_to_v2(self, pos: Tuple[float, float]) -> List[str]:
+        """Move the robot to the position on the full map
+            based on accurate localization in the environment
+
+        Args:
+            pos (Tuple[float, float]): (row, col) on full map
+
+        Returns:
+            List[str]: list of actions
+        """
+        actual_actions_list = []
+        success = False
+        # while not success:
+        self._set_nav_curr_pose()
+        curr_pose_on_full_map = self.get_agent_pose_on_map()  # (row, col, angle_deg) on full map
+        # print(f"self.config[\"nav\"][\"vis\"] : {self.config['nav']['vis']}")
+        paths = self.nav.plan_to_v2(
             curr_pose_on_full_map[:2], pos, vis=self.config["nav"]["plann_vis"]
         )  # take (row, col) in full map
         # print(paths)

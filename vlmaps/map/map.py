@@ -92,21 +92,22 @@ class Map:
         logging.info(f"heights min: {np.min(heights)}, max: {np.max(heights)}")
         height_mask = np.logical_and(heights > h_min, heights < h_max)
         self.obstacles_map = np.sum(self.occupied_ids[..., height_mask] > 0, axis=2) == 0
-        self.generate_cropped_obstacle_map(self.obstacles_map)
-        
+        self.envelope_map = np.sum(self.occupied_ids > 0, axis=2) == 0
+        self.generate_cropped_obstacle_map(self.obstacles_map, self.envelope_map)
         # obs_map_vis = (self.obstacles_map[:, :, None] * 255).astype(np.uint8)
         # obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
         # cv2.imshow("#obs#", obs_map_vis)
         # cv2.waitKey()
         return self.obstacles_map
 
-    def generate_cropped_obstacle_map(self, obstacle_map: np.ndarray) -> np.ndarray:
+    def generate_cropped_obstacle_map(self, obstacle_map: np.ndarray, envelope_map: np.ndarray) -> np.ndarray:
         x_indices, y_indices = np.where(obstacle_map == 0)
         self.rmin = np.min(x_indices)
         self.rmax = np.max(x_indices)
         self.cmin = np.min(y_indices)
         self.cmax = np.max(y_indices)
         self.obstacles_cropped = obstacle_map[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
+        self.envelope_cropped = envelope_map[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
         return self.obstacles_cropped
 
     def generate_rgb_topdown_map(self) -> np.ndarray:
@@ -121,7 +122,7 @@ class Map:
     def init_categories(self, categories: List[str]) -> np.ndarray:
         return NotImplementedError
     # implemented in vlmap.py
-    def customize_obstacle_map(self, potential_obstacle_names: List[str], obstacle_names: List[str]) -> np.ndarray:
+    def customize_obstacle_map(self, potential_obstacle_names: List[str], obstacle_names: List[str], passable_names: List[str], vis: bool = False) -> np.ndarray:
         return NotImplementedError
 
     @staticmethod
@@ -178,16 +179,17 @@ class Map:
         return rgb_map[self.rmin : self.rmax, self.cmin : self.cmax]
 
     @staticmethod
-    def _dilate_map(binary_map: np.ndarray, dilate_iter: int = 0, gaussian_sigma: float = 1.0):
+    def _dilate_map(binary_map: np.ndarray, dilate_iter: int = 0, gaussian_sigma: float = 1.0, use_dilation=True):
         h, w = binary_map.shape
         binary_map = cv2.resize(binary_map.astype(float), (w * 2, h * 2))
         binary_map = gaussian_filter((binary_map).astype(float), sigma=gaussian_sigma, truncate=3)
         binary_map = (binary_map > 0.5).astype(np.uint8)
-        binary_map = binary_dilation(
-            binary_map,
-            structure=np.ones((3, 3)),
-            iterations=dilate_iter * 2,
-        )
+        if use_dilation:
+            binary_map = binary_dilation(
+                binary_map,
+                structure=np.ones((3, 3)),
+                iterations=dilate_iter * 2,
+            )
         binary_map = cv2.resize(binary_map.astype(float), (w, h))
         return binary_map
 

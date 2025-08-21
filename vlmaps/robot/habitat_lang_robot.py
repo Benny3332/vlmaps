@@ -86,6 +86,7 @@ class HabitatLanguageRobot(LangRobot):
             self.map.customize_obstacle_map(
                 self.config.map_config.potential_obstacle_names,
                 self.config.map_config.obstacle_names,
+                self.config.map_config.passable_names,
                 vis=self.config.nav.vis,
             )
             cropped_obst_map = self.map.get_customized_obstacle_cropped()
@@ -95,7 +96,8 @@ class HabitatLanguageRobot(LangRobot):
             self.vlmaps_dataloader.rmin,
             self.vlmaps_dataloader.cmin,
             vis=self.config["nav"]["vis2"],
-            use_internal_contour = self.config["nav"]["use_internal_contour"]
+            use_internal_contour = self.config["nav"]["use_internal_contour"],
+            detect_internal_contours = self.config["nav"]["detect_internal_contours"]
         )
 
         # self._setup_localizer(vlmaps_data_dir)

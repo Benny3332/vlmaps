@@ -74,7 +74,7 @@ def point_in_contours(obs_map, contours_list, point):
     return ids
 
 
-def build_visgraph_with_obs_map(obs_map, use_internal_contour=False, internal_point=None, vis=False):
+def build_visgraph_with_obs_map(obs_map, use_internal_contour=False, internal_point=None, vis=False, detect_internal_contours: bool=False):
     # 将障碍物地图转换为可视化图像
     obs_map_vis = (obs_map[:, :, None] * 255).astype(np.uint8)
     obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])

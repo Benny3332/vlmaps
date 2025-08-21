@@ -8,10 +8,10 @@ class Navigator:
     def __init__(self):
         pass
 
-    def build_visgraph(self, obstacle_map: np.ndarray, rowmin: float, colmin: float, vis: bool = False, use_internal_contour: bool = False):
+    def build_visgraph(self, obstacle_map: np.ndarray, rowmin: float, colmin: float, vis: bool = False, use_internal_contour: bool = False, detect_internal_contours: bool = False):
         self.obs_map = obstacle_map
         # 根据障碍物地图构建可视化图。
-        self.visgraph = build_visgraph_with_obs_map(obstacle_map, use_internal_contour, vis=vis)
+        self.visgraph = build_visgraph_with_obs_map(obstacle_map, use_internal_contour, vis=vis, detect_internal_contours=detect_internal_contours)
         self.rowmin = rowmin
         self.colmin = colmin
 

@@ -135,7 +135,7 @@ class VLMap(Map):
             print("clip model is already initialized")
             return
         if torch.cuda.is_available():
-            self.device = "cuda:1"
+            self.device = "cuda:0"
         elif torch.backends.mps.is_available():
             self.device = "mps"
         else:
@@ -196,10 +196,36 @@ class VLMap(Map):
         mask = max_ids == cat_id
         return mask
 
+    def index_map_v2(self, language_desc: str, with_init_cat: bool = True):
+        if with_init_cat and self.scores_mat is not None and self.categories is not None:
+            cat_id = find_similar_category_id(language_desc, self.categories)
+            scores_mat = self.scores_mat
+        else:
+            if with_init_cat:
+                raise Exception(
+                    "Categories are not preloaded. Call init_categories(categories: List[str]) to initialize categories."
+                )
+            scores_mat = get_lseg_score(
+                self.clip_model,
+                [language_desc],
+                self.grid_feat,
+                self.clip_feat_dim,
+                use_multiple_templates=True,
+                add_other=True,
+            )  # score for name and other
+            cat_id = 0
+        # logging.info(f"self.categories: {self.categories}")
+        # logging.info(f"cat_id: {cat_id}")
+        # logging.info(f"catscores_mat_id: {scores_mat.shape}")
+        max_ids = np.argmax(scores_mat, axis=1)
+        mask = max_ids == cat_id
+        return mask, max_ids
+
     def customize_obstacle_map(
         self,
         potential_obstacle_names: List[str],
         obstacle_names: List[str],
+        passable_names: List[str],
         vis: bool = False,
     ):
         if self.obstacles_cropped is None and self.obstacles_map is None:
@@ -226,8 +252,68 @@ class VLMap(Map):
             self.map_config.dilate_iter,
             self.map_config.gaussian_sigma,
         )
-        # 所有原来等于0的元素对应的位置会是True，而不等于0的元素对应的位置会是False
+        
         self.obstacles_new_cropped = self.obstacles_new_cropped == 0
+
+        envelope_map_reverse = ~self.envelope_cropped
+        envelope_cropped_filter = Map._dilate_map(
+            envelope_map_reverse,
+            self.map_config.dilate_iter,
+            self.map_config.gaussian_sigma,
+            use_dilation=False,
+        )
+        self.obstacles_union = ~(np.logical_or(self.obstacles_new_cropped == 0, envelope_cropped_filter ==0))
+        if vis:
+            cv2.imshow("Safe Passable Area", (self.obstacles_union * 255).astype(np.uint8))
+        return
+        #可通行区域
+        combined_potential_classes = list(set(self.map_config.potential_obstacle_names + self.map_config.passable_names))
+        
+        # 创建空的障碍物地图（因为我们只关心语义识别结果）
+        dummy_obstacles = np.zeros_like(self.obstacles_cropped, dtype=bool)
+        
+        # 识别可通行区域
+        passable_area_cropped = get_dynamic_obstacles_map_3d(
+            self.clip_model,
+            dummy_obstacles,
+            combined_potential_classes,  # 合并后的潜在类别，提升分割效果
+            self.map_config.passable_names,              # 实际关心的可通行类别
+            self.grid_feat,
+            self.grid_pos,
+            self.rmin,
+            self.cmin,
+            self.clip_feat_dim,
+            vis=False,
+        )
+
+        passable_area_new_cropped = Map._dilate_map(
+            passable_area_cropped == 0,
+            5,
+            self.map_config.gaussian_sigma,
+        )
+        # get_dynamic_obstacles_map_3d返回的是识别出的目标区域（在这里是可通行区域）
+        passable_map = passable_area_cropped == 0
+
+        # 6. 从可通行区域中减去膨胀的障碍物区域，得到安全可通行区域
+        # 确保膨胀后的障碍物不会超出可通行区域
+        self.safe_passable_map = np.logical_and(
+            passable_map,
+            self.obstacles_new_cropped
+        )
+
+        # 7. 可视化结果
+        if vis:
+            # 显示原始障碍物
+            cv2.imshow("Original Obstacles", ((self.obstacles_cropped == 0) * 255).astype(np.uint8))
+            # 显示可通行区域
+            cv2.imshow("Passable Area", (passable_map * 255).astype(np.uint8))
+            cv2.imshow("passable_area_new_cropped", (passable_area_new_cropped * 255).astype(np.uint8))
+            # 显示膨胀后的障碍物
+            cv2.imshow("Dilated Obstacles", (self.obstacles_new_cropped * 255).astype(np.uint8))
+            # 显示安全可通行区域
+            cv2.imshow("Safe Passable Area", (self.safe_passable_map * 255).astype(np.uint8))
+            cv2.waitKey()
+
 
     # def load_categories(self, categories: List[str] = None):
     #     if categories is None:

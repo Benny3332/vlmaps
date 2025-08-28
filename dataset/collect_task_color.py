@@ -423,8 +423,11 @@ def main(config: DictConfig) -> None:
         sim = habitat_sim.Simulator(cfg)
         agent = sim.initialize_agent(sim_setting["default_agent"])
         agent_state = habitat_sim.AgentState()
-        pose = [8.37611198425293,	-1.2843499183654785,	7.724077224731445,	0.0,	0.0,	0.0,	1.0]
-        agent_state.position = pose[:3]
+        agent_state = habitat_sim.AgentState()
+        random_pt = sim.pathfinder.get_random_navigable_point()
+        pose = [-1.5274195671081543,	0.8055729866027832,	-0.5705926418304443,	0.0,	0.0,	0.0,	1.0]
+        # agent_state.position = pose[:3]
+        agent_state.position = random_pt
         agent_state.rotation = pose[3:]
         agent.set_state(agent_state)
         agent_state = agent.get_state()

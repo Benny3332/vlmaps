@@ -128,6 +128,7 @@ class VLMapBuilder2:
                 raise ValueError("Invalid rotation type")
 
             base_pose = self.base_transform @ habitat_base_pose @ np.linalg.inv(self.base_transform)
+            base_pose[:3, 3] += np.array([0, 0, self.map_config.pose_info.camera_height])
             tf = self.inv_init_base_tf @ base_pose
 
             # 读取RGB图像
@@ -242,7 +243,8 @@ class VLMapBuilder2:
         pbar = tqdm(zip(self.depth_paths, self.base_poses), total=len(self.depth_paths))
         min_vals = np.full(3, np.inf)
         max_vals = np.full(3, -np.inf)
-        for depth_path, base_posevec in pbar:
+        all_points = []
+        for i, (depth_path, base_posevec) in enumerate(pbar):
             # 加载深度数据
             depth = load_depth_npy(depth_path)
             
@@ -257,17 +259,23 @@ class VLMapBuilder2:
             elif self.rot_type == "mat":
                 habitat_base_pose = base_posevec.reshape((4, 4))
             base_pose = self.base_transform @ habitat_base_pose @ np.linalg.inv(self.base_transform)
+            base_pose[:3, 3] += np.array([0, 0, self.map_config.pose_info.camera_height])
             tf = self.inv_init_base_tf @ base_pose
             pc_transform = tf @ self.base_transform @ self.base2cam_tf
             pc_global = transform_pc(pc, pc_transform)
-            
+            all_points.append(pc_global.T)
             min_vals = np.minimum(min_vals, pc_global.min(axis=1))
             max_vals = np.maximum(max_vals, pc_global.max(axis=1))
-        
         # 计算点云范围
         self.pcd_min = min_vals
         self.pcd_max = max_vals
-        
+        origin = np.zeros(3)  # 坐标轴的原点
+        axis_length = 1.0  # 坐标轴的长度
+        axis_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(axis_length, origin)
+        all_points_show = np.concatenate(all_points, axis=0)
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(all_points_show)
+        o3d.visualization.draw_geometries([pcd, axis_frame])
         print(f"Global point cloud range: min={self.pcd_min}, max={self.pcd_max}")
     def create_camera_map(self):
         """

@@ -229,6 +229,24 @@ def save_states(save_dir, agent_states):
             f.write(f"{sep}{pos[0]}\t{pos[1]}\t{pos[2]}\t{quat[0]}\t{quat[1]}\t{quat[2]}\t{quat[3]}")
             sep = "\n"
 
+def save_color_sensor_states(save_dir, agent_states):
+    """
+    将每一帧的 color_sensor 世界位姿写入 save_dir/color_sensor_poses.txt
+    每行格式: x  y  z  qx  qy  qz  qw
+    """
+    save_path = Path(save_dir) / "color_sensor_poses.txt"
+    with open(save_path, "w") as f:
+        sep = ""
+        for st in agent_states:
+            # 从 AgentState 中直接拿该帧下的传感器位姿
+            if "color_sensor" not in st.sensor_states:
+                raise KeyError("当前 AgentState 中没有名为 'color_sensor' 的传感器，请检查传感器命名。")
+            sst = st.sensor_states["color_sensor"]
+            pos = sst.position
+            quat = [sst.rotation.x, sst.rotation.y, sst.rotation.z, sst.rotation.w]
+            f.write(f"{sep}{pos[0]}\t{pos[1]}\t{pos[2]}\t{quat[0]}\t{quat[1]}\t{quat[2]}\t{quat[3]}")
+            sep = "\n"
+
 
 def save_obs(
     root_save_dir: Union[str, Path], sim_setting: Dict, observations: Dict, save_id: int, obj2cls: Dict

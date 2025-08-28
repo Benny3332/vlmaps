@@ -58,7 +58,8 @@ class Map:
         (x forward, y left, z up) to base frame"""
         self.base2cam_tf = np.eye(4)
         self.base2cam_tf[:3, :3] = np.array([self.map_config.pose_info.base2cam_rot]).reshape((3, 3))
-        self.base2cam_tf[1, 3] = self.map_config.pose_info.camera_height
+        # 加了会影响绕y轴的旋转，具体来说就是有绕y轴的旋转时，会将这个位移叠加到变换中
+        # self.base2cam_tf[1, 3] = self.map_config.pose_info.camera_height
         # transform the base coordinate such that x is forward, y is leftward, z is upward
         self.base_transform = np.eye(4)
         self.base_transform[0, :3] = self.map_config.pose_info.base_forward_axis
@@ -94,6 +95,8 @@ class Map:
         self.obstacles_map = np.sum(self.occupied_ids[..., height_mask] > 0, axis=2) == 0
         self.envelope_map = np.sum(self.occupied_ids > 0, axis=2) == 0
         self.generate_cropped_obstacle_map(self.obstacles_map, self.envelope_map)
+        self.min_height = h_min
+        self.max_height = h_max
         # obs_map_vis = (self.obstacles_map[:, :, None] * 255).astype(np.uint8)
         # obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
         # cv2.imshow("#obs#", obs_map_vis)
@@ -270,7 +273,7 @@ class Map:
         contours, centers, bbox_list, color_dists = self.get_pos_and_color(name, vis)
         
         # 过滤小物体
-        ids_list = self.filter_small_objects(bbox_list, name, area_thres=1)
+        ids_list = self.filter_small_objects(bbox_list, name, area_thres=5)
         contours = [contours[i] for i in ids_list]
         centers = [centers[i] for i in ids_list]
         bbox_list = [bbox_list[i] for i in ids_list]
@@ -373,9 +376,6 @@ class Map:
             dist = np.sqrt((center[0]-curr_pos[0])**2 + (center[1]-curr_pos[1])**2)
             dist_scores[i] = 1 / (dist + 1e-6)  # 避免除以零
         
-        # 归一化分数
-        if np.max(color_scores) > 0:
-            color_scores = color_scores / np.max(color_scores)
         if np.max(dist_scores) > 0:
             dist_scores = dist_scores / np.max(dist_scores)
         

@@ -185,12 +185,12 @@ class LangRobot:
     def move_to_object(self, name: str, vis: bool = False):
         self._set_nav_curr_pose()
         pos = self.map.get_nearest_pos(self.curr_pos_on_map, name, vis)
-        self.move_to(pos)
+        self.move_to_v2(pos)
 
-    def move_to_color_object(self, name: str, color_list: List[List[int]], vis: bool = False):
+    def move_to_color_object(self, name: str, color_list: List[List[int]], true_color_value: List[List[int]], vis: bool = False):
         self._set_nav_curr_pose()
         # color_list = [[56,98,173]]
-        pos = self.map.get_nearest_and_similarity_color_pos(self.curr_pos_on_map, name, color_list, 0.975, vis)
+        pos = self.map.get_nearest_and_similarity_color_pos(self.curr_pos_on_map, name, color_list, 0.95, vis)
         self.move_to_v2(pos)
 
     def move_forward(self, meters: float):

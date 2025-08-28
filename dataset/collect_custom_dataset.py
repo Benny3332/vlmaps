@@ -19,6 +19,25 @@ d3_40_colors_rgb = np.array([
     [123, 65, 115], [165, 81, 148], [206, 109, 189], [222, 158, 214]
 ], dtype=np.uint8)
 
+def keyboard_control_fast():
+    k = cv2.waitKey(1)
+    action = None
+    if k == ord("a"):
+        action = "turn_left"
+    elif k == ord("d"):
+        action = "turn_right"
+    elif k == ord("w"):
+        action = "move_forward"
+    elif k == ord("s"):
+        action = "move_backward"
+    elif k == ord("i"):
+        action = "look_up"
+    elif k == ord("k"):
+        action = "look_down"
+    elif k == ord("q"):  # 退出程序
+        action = "stop"
+    return k, action
+
 @hydra.main(
     version_base=None,
     config_path="../config",
@@ -66,8 +85,11 @@ def main(config: DictConfig) -> None:
             "semantic_sensor": True,
             "lidar_sensor": True,
             "move_forward": 0.1,
+            "move_backward": 0.1,
             "turn_left": 5,
             "turn_right": 5,
+            "look_up": 5.0,
+            "look_down": 5.0,
             "width": 1080,
             "height": 720,
             "enable_physics": False,
@@ -75,10 +97,11 @@ def main(config: DictConfig) -> None:
             "lidar_fov": 360,
             "depth_img_for_lidar_n": 20,
             "img_save_dir": scene_dir,
+            "scene_dataset_config_file": os.path.join(config.habitat_scene_dir, "mp3d.scene_dataset_config.json")
         }
 
         # cfg = make_simple_cfg(sim_setting)
-        cfg = make_cfg(sim_setting)
+        cfg = make_cfg_2(sim_setting)
 
         # create a simulator instance
         sim = habitat_sim.Simulator(cfg)
@@ -110,8 +133,8 @@ def main(config: DictConfig) -> None:
         agent_state.position = random_pt
         # agent.set_state(agent_state)
         # agent_state = habitat_sim.AgentState()
-        pose = [3.278000593185425,	3.456643581390381,	4.238160133361816,	0.0,	0.0,	0.0,	1.0]
-        agent_state.position = random_pt
+        pose = [-1.5274195671081543,	0.8055729866027832,	-0.5705926418304443,	0.0,	0.0,	0.0,	1.0]
+        agent_state.position = pose[:3]
         agent_state.rotation = pose[3:]
         agent.set_state(agent_state)
         agent_state = agent.get_state()
@@ -126,6 +149,7 @@ def main(config: DictConfig) -> None:
         while True:
             show_rgb(obs)
             send_semantic(obs)
+            send_depth(obs)
             k, action = keyboard_control_fast()
             # print(f"keybroad: {k}")
             if k != -1:
@@ -151,6 +175,7 @@ def main(config: DictConfig) -> None:
                     action = last_action
 
             obs = sim.step(action)
+            print(f"agent state  :   {agent.get_state()}")
             actions_list.append(action)
 
         actions_list = [x for x in actions_list if x != "pause"]
@@ -172,6 +197,7 @@ def main(config: DictConfig) -> None:
             save_obs(root_save_dir, sim_setting, obs, action_i + 1, obj2cls)
             agent_states.append(agent.get_state())
         save_states(root_save_dir, agent_states)
+        save_color_sensor_states(root_save_dir, agent_states)
 
 def get_camera_intrinsics(sim, sensor_name):
     # 获取渲染相机
@@ -191,6 +217,15 @@ def get_camera_intrinsics(sim, sensor_name):
         [0, 0, 1]
     ])
     return intrinsics
+
+def send_depth(obs):
+    """可视化深度图像但不保存"""
+    depth_obs = obs["depth_sensor"]
+    # Normalize depth for visualization (0 to 255 for display)
+    depth_normalized = cv2.normalize(depth_obs, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    # Apply JET colormap for better visualization
+    depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_JET)
+    cv2.imshow("depth", depth_colored)
 
 def send_semantic(obs):
     """可视化语义分割图像但不保存"""

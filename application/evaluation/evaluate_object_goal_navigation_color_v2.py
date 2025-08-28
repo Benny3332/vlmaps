@@ -82,12 +82,13 @@ def main(config: DictConfig) -> None:
             robot.set_agent_state(object_nav_task.init_hab_tf)
             
             # 遍历物体类别列表
-            for cat_i, (cat, color) in enumerate(zip(object_categories, colors_rgb)):
+            for cat_i, (cat, color, obj_info) in enumerate(zip(object_categories, colors_rgb, object_nav_task.objects_info)):
                 # 打印导航到的类别
-                logging.info(f"Navigating to category {cat} with color {color}")
-
+                color_values_gt = obj_info["color_value"]
+                logging.info(f"Navigating to category {cat} with color {color}, gt color values {color_values_gt}")
+                
                 # 执行移动到物体的动作
-                actions_list = robot.move_to_color_object(cat, color, config.nav.vis)
+                actions_list = robot.move_to_color_object(cat, color, color_values_gt, vis = config.nav.vis)
 
             # 获取已记录的动作列表
             recorded_actions_list = robot.get_recorded_actions()

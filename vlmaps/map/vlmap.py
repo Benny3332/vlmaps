@@ -14,7 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 from scipy.ndimage import binary_closing, binary_dilation, gaussian_filter
 import torch
 from vlmaps.utils.clip_utils import get_text_feats_multiple_templates
-from vlmaps.utils.visualize_utils import pool_3d_label_to_2d
+from vlmaps.utils.visualize_utils import pool_3d_label_to_2d, pool_filter_by_height_3d_label_to_2d
 
 # from utils.ai2thor_constant import ai2thor_class_list
 # from utils.clip_mapping_utils import load_map
@@ -244,6 +244,9 @@ class VLMap(Map):
             self.rmin,
             self.cmin,
             self.clip_feat_dim,
+            h_min = self.min_height,
+            h_max = self.max_height,
+            cs = self.cs,
             vis=vis,
         )
         # 对一个二值地图（binary_map）进行膨胀处理，同时可选地应用高斯滤波
@@ -263,8 +266,18 @@ class VLMap(Map):
             use_dilation=False,
         )
         self.passable_map = ~(np.logical_or(self.obstacles_new_cropped == 0, envelope_cropped_filter ==0))
+
+        # x_start, y_start = 62, 205
+        # x_end, y_end = 71, 217
+
+        # # 确保坐标在数组范围内
+        # self.edit_obstacle(x_start, y_start, x_end, y_end)
+
         if vis:
+            cv2.imshow("envelope_cropped_filter", (envelope_cropped_filter * 255).astype(np.uint8))
+            cv2.imshow("obstacles_new_cropped", (self.obstacles_new_cropped * 255).astype(np.uint8))
             cv2.imshow("Safe Passable Area", (self.passable_map * 255).astype(np.uint8))
+            cv2.waitKey()
         return
         #可通行区域
         combined_potential_classes = list(set(self.map_config.potential_obstacle_names + self.map_config.passable_names))
@@ -313,6 +326,16 @@ class VLMap(Map):
             # 显示安全可通行区域
             cv2.imshow("Safe Passable Area", (self.safe_passable_map * 255).astype(np.uint8))
             cv2.waitKey()
+
+    def edit_obstacle(self, x_start, y_start, x_end, y_end):
+        h, w = self.passable_map.shape
+        x_start = max(0, min(x_start, w - 1))
+        x_end = max(0, min(x_end + 1, w))  # 结束坐标+1（切片右开区间）
+        y_start = max(0, min(y_start, h - 1))
+        y_end = max(0, min(y_end + 1, h))   # 结束坐标+1（切片右开区间）
+
+        # 设置指定区域为True
+        self.passable_map[y_start:y_end, x_start:x_end] = True
 
 
     # def load_categories(self, categories: List[str] = None):
@@ -414,7 +437,7 @@ class VLMap(Map):
         # 获取目标类别的3D点云掩码
         pc_mask = self.index_map(name, with_init_cat=True)
         # pc_mask_index = np.where(pc_mask)[0]
-        mask_2d = pool_3d_label_to_2d(pc_mask, self.grid_pos, self.gs)
+        mask_2d = pool_filter_by_height_3d_label_to_2d(pc_mask, self.grid_pos, self.gs, self.cs, self.min_height, self.max_height)
         mask_2d = mask_2d[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
         # mask_2d_index = np.stack(np.where(mask_2d), axis=1)
         if vis:

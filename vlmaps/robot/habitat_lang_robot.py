@@ -95,11 +95,14 @@ class HabitatLanguageRobot(LangRobot):
             cropped_obst_map,
             self.vlmaps_dataloader.rmin,
             self.vlmaps_dataloader.cmin,
-            vis=self.config["nav"]["vis2"],
+            vis=self.config["nav"]["vis"],
             use_internal_contour = self.config["nav"]["use_internal_contour"],
             detect_internal_contours = self.config["nav"]["detect_internal_contours"]
         )
         self.nav.passable_map = self.map.passable_map
+        if self.config["nav"]["vis2"]:
+            cv2.imshow("Safe Passable Area", (self.map.passable_map * 255).astype(np.uint8))
+            cv2.waitKey()
         # self._setup_localizer(vlmaps_data_dir)
 
     def setup_map(self, vlmaps_data_dir: str):
@@ -538,7 +541,7 @@ class HabitatLanguageRobot(LangRobot):
 
             real_actions_list.append(action)
             if vis:
-                self.display_obs(waitkey=True)
+                self.display_obs(waitkey=False)
                 self.display_curr_pos_on_map(map)
             if poses_list is None:
                 continue

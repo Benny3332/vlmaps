@@ -112,9 +112,9 @@ def build_visgraph_with_obs_map(obs_map, use_internal_contour=False, internal_po
             cv2.drawContours(obs_map_vis, [contour_cv2], 0, (0, 255, 0), 3)
 
     # 在所有轮廓绘制完成后，统一显示
-    if vis:
-        cv2.imshow("obs", obs_map_vis)
-        cv2.waitKey()  # 只等待一次，显示所有轮廓
+    # if vis:
+    #     cv2.imshow("obs", obs_map_vis)
+    #     cv2.waitKey()  # 只等待一次，显示所有轮廓
 
     # 提取轮廓点并构建 VisGraph
     for contour in contours_list:
@@ -206,7 +206,7 @@ def plan_to_pos_v2(start, goal, obstacles, G: vg.VisGraph = None, vis=False):
 
     return path
 
-def adjust_if_in_obstacle(point, obstacles, min_region_size=50, max_distance=10):
+def adjust_if_in_obstacle(point, obstacles, min_region_size=1000, max_distance=100):
     """
     如果点在障碍物里，将其调整到一个合理的自由点，优先选择与原始点较近的点。
     - point: numpy array [row, col]
@@ -272,16 +272,16 @@ def plan_to_pos_v3(start, goal, obstacles, vis=False):
     """
 
     # 转成 numpy 数组
-    start = np.array(start)
-    goal = np.array(goal)
+    start = np.array(start, dtype=np.float64)
+    goal = np.array(goal, dtype=np.float64)
 
     start = adjust_if_in_obstacle(start, obstacles)
     goal = adjust_if_in_obstacle(goal, obstacles)
 
     # 碰撞检测函数
     def is_collision_free(p1, p2, obs):
-        p1 = np.array(p1)
-        p2 = np.array(p2)
+        p1 = np.array(p1, dtype=np.float64)
+        p2 = np.array(p2, dtype=np.float64)
         direction = p2 - p1
         distance = np.linalg.norm(direction)
         if distance < 1e-6:
@@ -297,21 +297,23 @@ def plan_to_pos_v3(start, goal, obstacles, vis=False):
         return True
 
     # 参数
-    max_iter = 10000
-    step_size = 15.0
-    goal_sample_prob = 0.05
-    goal_threshold = 2.0
-    rewire_radius = 15.0
+    max_iter = 8000
+    step_size = 30.0
+    goal_sample_prob = 0.2
+    goal_threshold = 20.0
+    rewire_radius = 50.0
     height, width = obstacles.shape
     vis_interval = 200
 
+    free_points = np.argwhere(obstacles == 1)
+
     # 初始化树
-    tree = [start]
+    tree = [start.copy()]
     parents = [-1]
     costs = [0.0]
 
     # 可视化底图
-    if True:
+    if vis:
         obs_map_vis = (obstacles[:, :, None] * 255).astype(np.uint8)
         obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
         obs_map_vis = cv2.circle(obs_map_vis, (int(start[1]), int(start[0])), 3, (255, 0, 0), -1)
@@ -322,8 +324,10 @@ def plan_to_pos_v3(start, goal, obstacles, vis=False):
         if np.random.rand() < goal_sample_prob:
             sample = goal
         else:
-            sample = np.random.uniform(0, [height, width])
+            idx = np.random.randint(len(free_points))
+            sample = free_points[idx]
 
+        sample = np.array(sample, dtype=np.float64)
         r, c = int(sample[0]), int(sample[1])
         if r < 0 or r >= height or c < 0 or c >= width or obstacles[r, c] == 0:
             continue
@@ -413,7 +417,7 @@ def plan_to_pos_v3(start, goal, obstacles, vis=False):
     processing_time = end_time - start_time
     logging.info(f"'############ RRT star run time:':{processing_time:.3f} seconds############")
     # 可视化最终路径
-    if True:
+    if vis:
         for i, point in enumerate(path):
             subgoal = (int(point[1]), int(point[0]))
             obs_map_vis = cv2.circle(obs_map_vis, subgoal, 3, (255, 0, 0), -1)
@@ -540,3 +544,282 @@ def get_dist_to_bbox_2d(center, size, pos):
            |  |  
         """
         return 0
+
+
+def plan_to_pos_v3_bidirectional(start, goal, obstacles, vis=False):
+    """
+    Plan a path using Bidirectional RRT* (Rapidly-exploring Random Tree Star).
+    Start and goal are (row, col) in the map.
+    obstacles: 2D numpy array (0 = obstacle, 1 = free space).
+    """
+    # 转成 numpy 数组
+    start = np.array(start, dtype=np.float64)
+    goal = np.array(goal, dtype=np.float64)
+
+    start = adjust_if_in_obstacle(start, obstacles)
+    goal = adjust_if_in_obstacle(goal, obstacles)
+
+    # 碰撞检测函数
+    def is_collision_free(p1, p2, obs):
+        p1 = np.array(p1, dtype=np.float64)
+        p2 = np.array(p2, dtype=np.float64)
+        direction = p2 - p1
+        distance = np.linalg.norm(direction)
+        if distance < 1e-6:
+            return True
+        direction /= distance
+        num_samples = int(distance * 2) + 2
+        for i in range(num_samples):
+            point = p1 + (i / (num_samples - 1)) * (p2 - p1)
+            r = int(np.round(point[0]))
+            c = int(np.round(point[1]))
+            if r < 0 or r >= obs.shape[0] or c < 0 or c >= obs.shape[1] or obs[r, c] == 0:
+                return False
+        return True
+
+    # 参数
+    max_iter = 4000
+    step_size = 30.0
+    goal_sample_prob = 0.2
+    goal_threshold = 100.0
+    rewire_radius = 50.0
+    height, width = obstacles.shape
+    vis_interval = 100
+
+    free_points = np.argwhere(obstacles == 1)
+
+    # 初始化两棵树
+    tree_start = [start.copy()]
+    tree_goal = [goal.copy()]
+    parents_start = [-1]
+    parents_goal = [-1]
+    costs_start = [0.0]
+    costs_goal = [0.0]
+
+    # 可视化底图
+    if vis:
+        obs_map_vis = (obstacles[:, :, None] * 255).astype(np.uint8)
+        obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
+        obs_map_vis = cv2.circle(obs_map_vis, (int(start[1]), int(start[0])), 3, (255, 0, 0), -1)
+        obs_map_vis = cv2.circle(obs_map_vis, (int(goal[1]), int(goal[0])), 3, (0, 0, 255), -1)
+
+    start_time = time.perf_counter()
+
+    best_path = None
+    best_cost = np.inf
+    swap = False
+
+    def get_path(tree, parents, end_idx):
+        path = []
+        cur = end_idx
+        while cur != -1:
+            path.append(tree[cur].tolist())
+            cur = parents[cur]
+        path.reverse()
+        return path
+
+    for i in range(max_iter):
+        # 采样
+        if np.random.rand() < goal_sample_prob:
+            sample = tree_goal[0] if not swap else tree_start[0]
+        else:
+            idx = np.random.randint(len(free_points))
+            sample = free_points[idx].astype(np.float64)
+
+        r, c = int(sample[0]), int(sample[1])
+        if r < 0 or r >= height or c < 0 or c >= width or obstacles[r, c] == 0:
+            continue
+
+        # Determine trees based on swap
+        if swap:
+            tree1, parents1, costs1 = tree_goal, parents_goal, costs_goal
+            tree2, parents2, costs2 = tree_start, parents_start, costs_start
+        else:
+            tree1, parents1, costs1 = tree_start, parents_start, costs_start
+            tree2, parents2, costs2 = tree_goal, parents_goal, costs_goal
+
+        # Extend tree1 towards sample
+        tree_array1 = np.stack(tree1)
+        dists1 = cdist(sample.reshape(1, 2), tree_array1)[0]
+        nearest_idx1 = np.argmin(dists1)
+        nearest1 = tree1[nearest_idx1]
+
+        dir_vec1 = sample - nearest1
+        dist1 = np.linalg.norm(dir_vec1)
+        if dist1 < 1e-6:
+            swap = not swap
+            continue
+        new_pos1 = nearest1 + (dir_vec1 / dist1) * min(step_size, dist1)
+
+        if not is_collision_free(nearest1, new_pos1, obstacles):
+            swap = not swap
+            continue
+
+        # Choose best parent
+        dists_to_new1 = cdist(new_pos1.reshape(1, 2), tree_array1)[0]
+        neighbor_idx1 = np.where(dists_to_new1 < rewire_radius)[0]
+        min_cost1 = np.inf
+        best_parent1 = None
+        for ni in neighbor_idx1:
+            if is_collision_free(tree1[ni], new_pos1, obstacles):
+                cost = costs1[ni] + np.linalg.norm(tree1[ni] - new_pos1)
+                if cost < min_cost1:
+                    min_cost1 = cost
+                    best_parent1 = ni
+        if best_parent1 is None:
+            swap = not swap
+            continue
+
+        # Add to tree1
+        tree1.append(new_pos1)
+        parents1.append(best_parent1)
+        costs1.append(min_cost1)
+
+        # Rewire tree1
+        for ni in neighbor_idx1:
+            if ni == best_parent1:
+                continue
+            if is_collision_free(new_pos1, tree1[ni], obstacles):
+                new_cost = min_cost1 + np.linalg.norm(tree1[ni] - new_pos1)
+                if new_cost < costs1[ni]:
+                    parents1[ni] = len(tree1) - 1
+                    costs1[ni] = new_cost
+
+        # Extend tree2 towards new_pos1
+        tree_array2 = np.stack(tree2)
+        dists2 = cdist(new_pos1.reshape(1, 2), tree_array2)[0]
+        nearest_idx2 = np.argmin(dists2)
+        nearest2 = tree2[nearest_idx2]
+
+        dir_vec2 = new_pos1 - nearest2
+        dist2 = np.linalg.norm(dir_vec2)
+        if dist2 < 1e-6:
+            swap = not swap
+            continue
+        new_pos2 = nearest2 + (dir_vec2 / dist2) * min(step_size, dist2)
+
+        if not is_collision_free(nearest2, new_pos2, obstacles):
+            swap = not swap
+            continue
+
+        # Choose best parent
+        dists_to_new2 = cdist(new_pos2.reshape(1, 2), tree_array2)[0]
+        neighbor_idx2 = np.where(dists_to_new2 < rewire_radius)[0]
+        min_cost2 = np.inf
+        best_parent2 = None
+        for ni in neighbor_idx2:
+            if is_collision_free(tree2[ni], new_pos2, obstacles):
+                cost = costs2[ni] + np.linalg.norm(tree2[ni] - new_pos2)
+                if cost < min_cost2:
+                    min_cost2 = cost
+                    best_parent2 = ni
+        if best_parent2 is None:
+            swap = not swap
+            continue
+
+        # Add to tree2
+        tree2.append(new_pos2)
+        parents2.append(best_parent2)
+        costs2.append(min_cost2)
+
+        # Rewire tree2
+        for ni in neighbor_idx2:
+            if ni == best_parent2:
+                continue
+            if is_collision_free(new_pos2, tree2[ni], obstacles):
+                new_cost = min_cost2 + np.linalg.norm(tree2[ni] - new_pos2)
+                if new_cost < costs2[ni]:
+                    parents2[ni] = len(tree2) - 1
+                    costs2[ni] = new_cost
+
+        # Check if connected
+        dist_connect = np.linalg.norm(new_pos1 - new_pos2)
+        if dist_connect < goal_threshold and is_collision_free(new_pos1, new_pos2, obstacles):
+            if not swap:
+                connect_start = len(tree_start) - 1  # new_pos1
+                connect_goal = len(tree_goal) - 1  # new_pos2
+            else:
+                connect_start = len(tree_start) - 1  # new_pos2
+                connect_goal = len(tree_goal) - 1  # new_pos1
+
+            total_cost = costs_start[connect_start] + costs_goal[connect_goal] + dist_connect
+
+            if total_cost < best_cost:
+                # Build path
+                path_start = get_path(tree_start, parents_start, connect_start)
+                path_goal = get_path(tree_goal, parents_goal, connect_goal)
+                path_goal_rev = path_goal[::-1]
+                if np.allclose(path_start[-1], path_goal[-1], atol=1e-6):
+                    temp_path = path_start + path_goal_rev[1:]
+                else:
+                    temp_path = path_start + path_goal_rev
+
+                best_path = temp_path
+                best_cost = total_cost
+                break
+
+        # 可视化生长
+        if vis and (i + 1) % vis_interval == 0:
+            logging.info(f"Visualizing trees {i + 1}...")
+            temp_map = obs_map_vis.copy()
+            # Draw start tree (green)
+            for idx, node in enumerate(tree_start):
+                node_pos = (int(node[1]), int(node[0]))
+                temp_map = cv2.circle(temp_map, node_pos, 1, (0, 255, 0), -1)
+                if parents_start[idx] != -1:
+                    parent_pos = (int(tree_start[parents_start[idx]][1]), int(tree_start[parents_start[idx]][0]))
+                    temp_map = cv2.line(temp_map, parent_pos, node_pos, (0, 255, 0), 1)
+            # Draw goal tree (blue)
+            for idx, node in enumerate(tree_goal):
+                node_pos = (int(node[1]), int(node[0]))
+                temp_map = cv2.circle(temp_map, node_pos, 1, (255, 0, 0), -1)
+                if parents_goal[idx] != -1:
+                    parent_pos = (int(tree_goal[parents_goal[idx]][1]), int(tree_goal[parents_goal[idx]][0]))
+                    temp_map = cv2.line(temp_map, parent_pos, node_pos, (255, 0, 0), 1)
+            cv2.imshow("Bidirectional RRT* Tree Growth", temp_map)
+            cv2.waitKey()
+
+        swap = not swap
+
+    # After loop
+    if best_path is None:
+        print("No path found after max iterations")
+        return []
+
+    path = optimize_path_with_clearance(best_path, obstacles, safe_margin=3)
+    end_time = time.perf_counter()
+    processing_time = end_time - start_time
+    logging.info(f"'############ Bidirectional RRT* run time:':{processing_time:.3f} seconds############")
+    
+    # 可视化最终路径
+    if vis:
+        final_map = obs_map_vis.copy()
+
+        # Draw start tree (green)
+        for idx, node in enumerate(tree_start):
+            node_pos = (int(node[1]), int(node[0]))
+            final_map = cv2.circle(final_map, node_pos, 1, (0, 255, 0), -1)
+            if parents_start[idx] != -1:
+                parent_pos = (int(tree_start[parents_start[idx]][1]), int(tree_start[parents_start[idx]][0]))
+                final_map = cv2.line(final_map, parent_pos, node_pos, (0, 255, 0), 1)
+
+        # Draw goal tree (blue)
+        for idx, node in enumerate(tree_goal):
+            node_pos = (int(node[1]), int(node[0]))
+            final_map = cv2.circle(final_map, node_pos, 1, (255, 0, 0), -1)
+            if parents_goal[idx] != -1:
+                parent_pos = (int(tree_goal[parents_goal[idx]][1]), int(tree_goal[parents_goal[idx]][0]))
+                final_map = cv2.line(final_map, parent_pos, node_pos, (255, 0, 0), 1)
+
+        # Draw final path (red)
+        for i, point in enumerate(path):
+            subgoal = (int(point[1]), int(point[0]))
+            final_map = cv2.circle(final_map, subgoal, 3, (0, 0, 255), -1)
+            if i > 0:
+                last_subgoal = (int(path[i - 1][1]), int(path[i - 1][0]))
+                final_map = cv2.line(final_map, last_subgoal, subgoal, (0, 0, 255), 2)
+
+        cv2.imshow("Bidirectional RRT* Final Trees & Path", final_map)
+        cv2.waitKey(0)
+
+    return path

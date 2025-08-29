@@ -79,9 +79,59 @@ class HabitatLanguageRobot(LangRobot):
             with open(stairs_file, "r") as f:
                 self.stairs_paths = json.load(f)
             print(f"Loaded stairs.json from {stairs_file}")
+            stairs = self.stairs_paths
+            stairs_map_coords = []
+            stair_floor_mappings = []
+            for path in stairs:
+                path_coords = []
+                for pose in path:
+                    tf = cvt_pose_vec2tf(np.array(pose["position"] + pose["rotation"]))  # Convert to 4x4 transform
+                    tf[:3, 3] += np.array([0, self.config.map_config.pose_info.camera_height, 0])
+                    row, col, height, _ = self.vlmaps_dataloader.conver_tf_from_habitat_tf(tf)
+                    height -= int(self.map.pcd_min[2] / self.cs)
+                    path_coords.append({"row": row, "col": col, "height": height})  # Store y as height
+                stairs_map_coords.append(path_coords)
+
+            height_tolerance = 20
+            floor_heights = []
+            for path in stairs_map_coords:
+                start_height = path[0]["height"]
+                end_height = path[-1]["height"]
+                floor_heights.extend([start_height, end_height])
+            
+            # Remove near-duplicate heights within tolerance
+            unique_heights = []
+            for h in sorted(floor_heights):
+                if not unique_heights or all(abs(h - uh) > height_tolerance for uh in unique_heights):
+                    unique_heights.append(h)
+            unique_heights.sort()  # Sort heights to assign floor indices (lowest = floor 0)
+
+            stair_floor_mappings = []
+            for idx, path in enumerate(stairs_map_coords):
+                start_height = path[0]["height"]
+                end_height = path[-1]["height"]
+                # Find the closest unique height for start and end
+                start_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - start_height))
+                end_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - end_height))
+                stair_floor_mappings.append({
+                    "path_idx": idx,
+                    "start_floor": start_floor,
+                    "end_floor": end_floor,
+                    "is_ascending": end_height > start_height
+                })
+            self.stairs_map_coords = stairs_map_coords
+            self.stair_floor_mappings = stair_floor_mappings
+            self.unique_heights = unique_heights
         else:
             print(f"stairs.json not found at {stairs_file}, using empty stairs list")
             self.stairs_paths = []
+
+    def generate_3d_obstacle_map(self):
+        self.map.generate_3d_obstacle_map(self.unique_heights, 
+                                          self.config.map_config.potential_obstacle_names, 
+                                          self.config.map_config.obstacle_names, 
+                                          self.config.map_config.min_floor_height, self.config.map_config.max_floor_height)
+
 
     def setup_scene(self, scene_id: int):
         """
@@ -99,7 +149,6 @@ class HabitatLanguageRobot(LangRobot):
         # np.array<bool>
         cropped_obst_map = self.map.get_obstacle_cropped()
         if self.config.map_config.potential_obstacle_names and self.config.map_config.obstacle_names:
-            print("come here")
             # 这里根据get_dynamic_obstacles_map_3d() vlmaps.yaml obstacle_names障碍物列表生成new obstacles_cropped
             # Map._dilate_map() 对一个二值地图(obstacles_new_cropped, binary_map）进行膨胀处理，同时可选地应用高斯滤波
             self.map.customize_obstacle_map(
@@ -537,54 +586,10 @@ class HabitatLanguageRobot(LangRobot):
         curr_pose_on_full_map = self.get_agent_pose_on_map()  # (row, col, angle_deg)
         current_3d_pos = self.vlmaps_dataloader.full_map_3d_pose  # (x, y, z) in Habitat coordinates
 
-        # Get stairs paths for the current scene
-        stairs = self.stairs_paths
-        if not stairs:
-            print("No stairs data available, falling back to single-floor navigation")
-            return self.move_to_v2(pos)
-
-        # Convert stairs positions to map coordinates (row, col)
-        stairs_map_coords = []
-        for path in stairs:
-            path_coords = []
-            for pose in path:
-                tf = cvt_pose_vec2tf(np.array(pose["position"] + pose["rotation"]))  # Convert to 4x4 transform
-                row, col, height, _ = self.vlmaps_dataloader.conver_tf_from_habitat_tf(tf)
-                path_coords.append({"row": row, "col": col, "height": height})  # Store y as height
-            stairs_map_coords.append(path_coords)
-
-        height_tolerance = 20  # Tolerance for considering heights equal (in meters)
-        floor_heights = []
-        for path in stairs_map_coords:
-            start_height = path[0]["height"]
-            end_height = path[-1]["height"]
-            floor_heights.extend([start_height, end_height])
-        
-        # Remove near-duplicate heights within tolerance
-        unique_heights = []
-        for h in sorted(floor_heights):
-            if not unique_heights or all(abs(h - uh) > height_tolerance for uh in unique_heights):
-                unique_heights.append(h)
-        unique_heights.sort()  # Sort heights to assign floor indices (lowest = floor 0)
-
-        # Map stair paths to the floors they connect
-        stair_floor_mappings = []
-        for idx, path in enumerate(stairs_map_coords):
-            start_height = path[0]["height"]
-            end_height = path[-1]["height"]
-            # Find the closest unique height for start and end
-            start_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - start_height))
-            end_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - end_height))
-            stair_floor_mappings.append({
-                "path_idx": idx,
-                "start_floor": start_floor,
-                "end_floor": end_floor,
-                "is_ascending": end_height > start_height
-            })
 
         # Determine source and target floors
-        src_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - current_3d_pos[2]))
-        tgt_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - avg_height))
+        src_floor = min(range(len(self.unique_heights)), key=lambda i: abs(self.unique_heights[i] - current_3d_pos[2]))
+        tgt_floor = min(range(len(self.unique_heights)), key=lambda i: abs(self.unique_heights[i] - avg_height))
 
         if src_floor == tgt_floor:
             print(f"Source and target on same floor ({src_floor}), using direct navigation")
@@ -603,14 +608,14 @@ class HabitatLanguageRobot(LangRobot):
             best_start = None
             best_end = None
             best_path_idx = None
-            for mapping in stair_floor_mappings:
+            for mapping in self.stair_floor_mappings:
                 # Check if the stair connects the desired floors (in either direction)
                 connects_floors = (
                     (mapping["start_floor"] == floor_from and mapping["end_floor"] == floor_to) or
                     (mapping["start_floor"] == floor_to and mapping["end_floor"] == floor_from)
                 )
                 if connects_floors:
-                    path = stairs_map_coords[mapping["path_idx"]]
+                    path = self.stairs_map_coords[mapping["path_idx"]]
                     # Determine start and end based on navigation direction
                     if (mapping["start_floor"] == floor_from and mapping["end_floor"] == floor_to):
                         path_start = path[0]
@@ -641,8 +646,8 @@ class HabitatLanguageRobot(LangRobot):
             paths.append(src_to_stair)
 
             # Stair path (reverse if descending and the path was recorded ascending, or vice versa)
-            stair_path = [(p["row"], p["col"]) for p in stairs_map_coords[path_idx]]
-            is_path_ascending = stair_floor_mappings[path_idx]["is_ascending"]
+            stair_path = [(p["row"], p["col"]) for p in  self.stairs_map_coords[path_idx]]
+            is_path_ascending = self.stair_floor_mappings[path_idx]["is_ascending"]
             if (ascending and not is_path_ascending) or (not ascending and is_path_ascending):
                 stair_path = stair_path[::-1]
             paths.append(stair_path)
@@ -664,8 +669,8 @@ class HabitatLanguageRobot(LangRobot):
             paths.append(src_to_stair1)
 
             # First stair path
-            stair1_path = [(p["row"], p["col"]) for p in stairs_map_coords[path1_idx]]
-            is_path1_ascending = stair_floor_mappings[path1_idx]["is_ascending"]
+            stair1_path = [(p["row"], p["col"]) for p in  self.stairs_map_coords[path1_idx]]
+            is_path1_ascending = self.stair_floor_mappings[path1_idx]["is_ascending"]
             if (ascending and not is_path1_ascending) or (not ascending and is_path1_ascending):
                 stair1_path = stair1_path[::-1]
             paths.append(stair1_path)
@@ -679,8 +684,8 @@ class HabitatLanguageRobot(LangRobot):
             paths.append(mid_path[1:])
 
             # Second stair path
-            stair2_path = [(p["row"], p["col"]) for p in stairs_map_coords[path2_idx]]
-            is_path2_ascending = stair_floor_mappings[path2_idx]["is_ascending"]
+            stair2_path = [(p["row"], p["col"]) for p in  self.stairs_map_coords[path2_idx]]
+            is_path2_ascending = self.stair_floor_mappings[path2_idx]["is_ascending"]
             if (ascending and not is_path2_ascending) or (not ascending and is_path2_ascending):
                 stair2_path = stair2_path[::-1]
             paths.append(stair2_path)

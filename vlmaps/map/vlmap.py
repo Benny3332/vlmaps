@@ -95,6 +95,8 @@ class VLMap(Map):
                 self.weight,
                 self.occupied_ids,
                 self.grid_rgb,
+                self.pcd_min,
+                self.pcd_max
             ) = load_3d_map(self.map_save_path)
         if self.map_config.pose_info.pose_type == "mobile_base_2":
             self.map_save_path = Path(data_dir) / "vlmap" / "vlmaps.h5df"
@@ -108,6 +110,8 @@ class VLMap(Map):
                 self.weight,
                 self.occupied_ids,
                 self.grid_rgb,
+                self.pcd_min,
+                self.pcd_max
             ) = load_3d_map(self.map_save_path)
         elif self.map_config.pose_info.pose_type == "camera_base":
             self.map_save_path = Path(data_dir) / "vlmap_cam" / "vlmaps_cam.h5df"
@@ -326,6 +330,60 @@ class VLMap(Map):
             # 显示安全可通行区域
             cv2.imshow("Safe Passable Area", (self.safe_passable_map * 255).astype(np.uint8))
             cv2.waitKey()
+
+    def customize_obstacle_3d_map(
+        self,
+        obstacles_cropped,
+        potential_obstacle_names: List[str],
+        obstacle_names: List[str],
+        h_min: float = 0.0,
+        h_max: float = 1.5,
+        vis: bool = False,
+    ):
+        if not hasattr(self, "clip_model"):
+            print("init_clip in customize obstacle map")
+            self._init_clip()
+        
+        obstacles_new_cropped = get_dynamic_obstacles_map_3d(
+            self.clip_model,
+            obstacles_cropped,
+            potential_obstacle_names,
+            obstacle_names,
+            self.grid_feat,
+            self.grid_pos,
+            self.rmin,
+            self.cmin,
+            self.clip_feat_dim,
+            h_min = h_min,
+            h_max = h_max,
+            cs = self.cs,
+            vis=vis,
+        )
+        # 对一个二值地图（binary_map）进行膨胀处理，同时可选地应用高斯滤波
+        obstacles_new_cropped = Map._dilate_map(
+            obstacles_new_cropped == 0,
+            self.map_config.dilate_iter,
+            self.map_config.gaussian_sigma,
+        )
+
+        obstacles_new_cropped = obstacles_new_cropped == 0
+
+        envelope_map_reverse = ~self.envelope_cropped
+        envelope_cropped_filter = Map._dilate_map(
+            envelope_map_reverse,
+            self.map_config.dilate_iter,
+            self.map_config.gaussian_sigma,
+            use_dilation=False,
+        )
+        passable_map = ~(np.logical_or(obstacles_new_cropped == 0, envelope_cropped_filter ==0))
+
+        # x_start, y_start = 62, 205
+        # x_end, y_end = 71, 217
+
+        # # 确保坐标在数组范围内
+        # self.edit_obstacle(x_start, y_start, x_end, y_end)
+
+        return passable_map
 
     def edit_obstacle(self, x_start, y_start, x_end, y_end):
         h, w = self.passable_map.shape

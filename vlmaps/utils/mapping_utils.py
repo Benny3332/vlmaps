@@ -569,9 +569,15 @@ def load_3d_map(map_path: str) -> Tuple[Set[int], np.ndarray, np.ndarray, np.nda
         weight = f["weight"][:]
         occupied_ids = f["occupied_ids"][:]
         grid_rgb = None
+        pcd_min = None
+        pcd_max = None
         if "grid_rgb" in f:
             grid_rgb = f["grid_rgb"][:]
-        return mapped_iter_list, grid_feat, grid_pos, weight, occupied_ids, grid_rgb
+        if "pcd_min" in f: 
+            pcd_min = f["pcd_min"][:]
+        if "pcd_max" in f:
+            pcd_max = f["pcd_max"][:]
+        return mapped_iter_list, grid_feat, grid_pos, weight, occupied_ids, grid_rgb, pcd_min, pcd_max
 
 
 d3_40_colors_rgb: np.ndarray = np.array(

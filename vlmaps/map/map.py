@@ -103,6 +103,43 @@ class Map:
         # cv2.waitKey()
         return self.obstacles_map
 
+    def generate_3d_obstacle_map(self, unique_heights: list[float], potential_obstacle_names: List[str], obstacle_names: List[str], h_min_rel: float = 0, h_max_rel: float = 1.5) -> list[np.ndarray]:
+        assert self.occupied_ids is not None, "map not loaded"
+        self.obstacle_3d_maps = []
+        self.obstacles_3d_cropped = []
+        self.min_3d_heights = []
+        self.max_3d_heights = []
+        self.passable_3d_maps = []
+        for uh in unique_heights:
+            h_min = (uh * self.cs) + h_min_rel
+            h_max = (uh * self.cs) + h_max_rel
+            self.min_3d_heights.append(h_min)
+            self.max_3d_heights.append(h_max)
+            heights = np.arange(0, self.occupied_ids.shape[-1]) * self.cs
+            logging.info(f"heights min: {np.min(heights)}, max: {np.max(heights)}")
+            height_mask = np.logical_and(heights > h_min, heights < h_max)
+            obstacle_map = np.sum(self.occupied_ids[..., height_mask] > 0, axis=2) == 0
+            obstacles_cropped = self.generate_cropped_3d_obstacle_map(self.obstacles_map, obstacle_map)
+
+            self.obstacle_3d_maps.append(obstacle_map)
+            self.obstacles_3d_cropped.append(obstacles_cropped)
+
+            passable_map = self.customize_obstacle_3d_map(
+                obstacles_cropped,
+                potential_obstacle_names,
+                obstacle_names,
+                h_min,
+                h_max
+            )
+            self.passable_3d_maps.append(passable_map)
+
+            obs_map_vis = (passable_map[:, :, None] * 255).astype(np.uint8)
+            obs_map_vis = np.tile(obs_map_vis, [1, 1, 3])
+            title = f"3d_obs_floor_{uh}"
+            cv2.imshow(title, obs_map_vis)
+            cv2.waitKey()
+        return self.obstacle_3d_maps, self.obstacles_3d_cropped, self.passable_3d_maps
+
     def generate_cropped_obstacle_map(self, obstacle_map: np.ndarray, envelope_map: np.ndarray) -> np.ndarray:
         x_indices, y_indices = np.where(obstacle_map == 0)
         self.rmin = np.min(x_indices)
@@ -112,6 +149,15 @@ class Map:
         self.obstacles_cropped = obstacle_map[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
         self.envelope_cropped = envelope_map[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
         return self.obstacles_cropped
+
+    def generate_cropped_3d_obstacle_map(self, max_obstacle_map: np.ndarray, obstacle_map: np.ndarray) -> np.ndarray:
+        x_indices, y_indices = np.where(max_obstacle_map == 0)
+        self.rmin = np.min(x_indices)
+        self.rmax = np.max(x_indices)
+        self.cmin = np.min(y_indices)
+        self.cmax = np.max(y_indices)
+        obstacles_cropped = obstacle_map[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
+        return obstacles_cropped
 
     def generate_rgb_topdown_map(self) -> np.ndarray:
         assert self.grid_rgb is not None, "map not loaded"
@@ -128,6 +174,8 @@ class Map:
     def customize_obstacle_map(self, potential_obstacle_names: List[str], obstacle_names: List[str], passable_names: List[str], vis: bool = False) -> np.ndarray:
         return NotImplementedError
 
+    def customize_obstacle_3d_map(self, obstacles_cropped, potential_obstacle_names: List[str], obstacle_names: List[str], h_min: float = 0.0, h_max: float = 1.5, vis: bool = False) -> np.ndarray:
+        return NotImplementedError
     @staticmethod
     def create(map_config: DictConfig) -> Map:
         from vlmaps.map import VLMap

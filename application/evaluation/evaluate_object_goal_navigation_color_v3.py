@@ -50,6 +50,8 @@ def main(config: DictConfig) -> None:
 
         robot.load_stairs()
 
+        robot.generate_3d_obstacle_map()
+
         # 初始化类别
         robot.map.init_categories(mp3dcat_2.copy())
 
@@ -104,7 +106,7 @@ def main(config: DictConfig) -> None:
                 object_nav_task.test_step_v2(robot.sim, robot, action, vis=config.nav.vis)
 
             # 获取保存目录
-            save_dir = robot.vlmaps_dataloader.data_dir / (config.map_config.map_type + "_color_obj_nav_results_v2")
+            save_dir = robot.vlmaps_dataloader.data_dir / (config.map_config.map_type + "_color_3d_obj_nav_results")
 
             # 创建保存目录
             os.makedirs(save_dir, exist_ok=True)

@@ -164,7 +164,14 @@ class Map:
         on a full map
         """
         return NotImplementedError
-
+    
+    def get_pos_color_and_height(self, name: str, vis: bool) -> Tuple[List[List[int]], List[List[float]], List[np.ndarray], List[Dict], List[int]]:
+        """
+        Get the contours, centers, and bbox list of a certain category
+        on a full map
+        """
+        return NotImplementedError
+    
     def get_distribution_map(self, name: str) -> np.ndarray:
         return NotImplementedError
 
@@ -719,3 +726,171 @@ class Map:
 
         pos = [nearest_center[0], nearest_box[3] + dist]
         return pos
+    
+    def get_3d_nearest_and_similarity_color_pos(
+        self, 
+        curr_pos: List[float], 
+        name: str, 
+        target_colors: List[List[int]],
+        color_weight: float = 0.5,
+        vis: bool = False
+    ) -> List[float]:
+        """
+        Get nearest position considering color information
+        :param curr_pos: Current [row, col] position
+        :param name: Object category name
+        :param target_colors: List of target RGB colors (e.g., [[255,0,0]] or [[255,0,0], [255,255,255]])
+        :param color_weight: Weight of color similarity (0-1)
+        :param vis: Whether to visualize
+        """
+        # 获取目标位置信息和颜色分布
+        contours, centers, bbox_list, color_dists, avg_heights = self.get_pos_color_and_height(name, vis)
+        
+        # 过滤小物体
+        ids_list = self.filter_small_objects(bbox_list, name, area_thres=5)
+        contours = [contours[i] for i in ids_list]
+        centers = [centers[i] for i in ids_list]
+        bbox_list = [bbox_list[i] for i in ids_list]
+        color_dists = [color_dists[i] for i in ids_list]
+        
+        if len(centers) == 0:
+            return curr_pos
+        
+        # 计算颜色匹配分数
+        color_scores = np.ones(len(centers))
+        
+        if target_colors:
+            for i, color_dist in enumerate(color_dists):
+                main_colors = color_dist["main_colors"]
+                score = 0.0
+                
+                if len(target_colors) == 1:
+                    # 单个目标颜色：只考虑相似度最高的值
+                    best_match_score = 0.0
+                    for color_info in main_colors:
+                        # 使用余弦相似度计算颜色匹配度
+                        obj_color = np.array(color_info["color"])
+                        tgt_color = np.array(target_colors[0])
+                        
+                        # 计算余弦相似度
+                        # dot_product = np.dot(obj_color, tgt_color)
+                        # norm_obj = np.linalg.norm(obj_color)
+                        # norm_tgt = np.linalg.norm(tgt_color)
+                        # similarity = dot_product / (norm_obj * norm_tgt + 1e-6)
+                        distance = np.linalg.norm(obj_color - tgt_color)
+                        similarity = 1 / (1 + distance/441)
+                        # 更新最佳匹配
+                        if similarity > best_match_score:
+                            best_match_score = similarity
+                    
+                    # 单个颜色直接使用最佳匹配分数
+                    color_scores[i] = best_match_score
+                
+                elif len(target_colors) >= 2:
+                    # 两个目标颜色：分别匹配主色和次主色
+                    primary_match = 0.0
+                    secondary_match = 0.0
+                    
+                    # 匹配第一个目标颜色（主色）
+                    best_primary_match = 0.0
+                    primary_idx = -1
+                    for j, color_info in enumerate(main_colors):
+                        obj_color = np.array(color_info["color"])
+                        tgt_color = np.array(target_colors[0])
+                        # 余弦相似度
+                        # dot_product = np.dot(obj_color, tgt_color)
+                        # norm_obj = np.linalg.norm(obj_color)
+                        # norm_tgt = np.linalg.norm(tgt_color)
+                        # similarity = dot_product / (norm_obj * norm_tgt + 1e-6)
+                        distance = np.linalg.norm(obj_color - tgt_color)
+                        similarity = 1 / (1 + distance/441)
+                        if similarity > best_primary_match:
+                            best_primary_match = similarity
+                            primary_idx = j
+                    
+                    primary_match = best_primary_match
+                    
+                    # 匹配第二个目标颜色（剩余颜色）
+                    best_secondary_match = 0.0
+                    for j, color_info in enumerate(main_colors):
+                        # 跳过已匹配的主色
+                        if j == primary_idx:
+                            continue
+                            
+                        obj_color = np.array(color_info["color"])
+                        tgt_color = np.array(target_colors[1])
+                        # 余弦相似度
+                        # dot_product = np.dot(obj_color, tgt_color)
+                        # norm_obj = np.linalg.norm(obj_color)
+                        # norm_tgt = np.linalg.norm(tgt_color)
+                        # similarity = dot_product / (norm_obj * norm_tgt + 1e-6)
+                        distance = np.linalg.norm(obj_color - tgt_color)
+                        similarity = 1 / (1 + distance/441)
+                        if similarity > best_secondary_match:
+                            best_secondary_match = similarity
+                    
+                    # 如果只有一个主色，使用它匹配第二个目标颜色
+                    if best_secondary_match == 0 and len(main_colors) > 0:
+                        obj_color = np.array(main_colors[0]["color"])
+                        tgt_color = np.array(target_colors[1])
+                        
+                        dot_product = np.dot(obj_color, tgt_color)
+                        norm_obj = np.linalg.norm(obj_color)
+                        norm_tgt = np.linalg.norm(tgt_color)
+                        best_secondary_match = dot_product / (norm_obj * norm_tgt + 1e-6)
+                    
+                    secondary_match = best_secondary_match
+                    
+                    # 计算平均分数
+                    color_scores[i] = (primary_match + secondary_match) / 2.0
+        
+        # 计算距离分数
+        dist_scores = np.zeros(len(centers))
+        for i, center in enumerate(centers):
+            dist = np.sqrt((center[0]-curr_pos[0])**2 + (center[1]-curr_pos[1])**2)
+            dist_scores[i] = 1 / (dist + 1e-6)  # 避免除以零
+        
+        if np.max(dist_scores) > 0:
+            dist_scores = dist_scores / np.max(dist_scores)
+        
+        # 综合评分 = 颜色匹配分数 * 颜色权重 + 距离分数 * (1 - 颜色权重)
+        combined_scores = (color_scores * color_weight) + (dist_scores * (1 - color_weight))
+        best_id = np.argmax(combined_scores)
+        if vis:
+            # 获取障碍物地图
+            obs_map = self.get_customized_obstacle_cropped()
+            if obs_map is None or obs_map.size == 0:
+                print("Error: obs_map is empty or invalid!")
+                return curr_pos
+            # 创建三通道 BGR 图像
+            obs_map_vis = (obs_map * 255).astype(np.uint8)
+            obs_map_vis = np.stack([obs_map_vis] * 3, axis=-1)
+
+            # 绘制选中轮廓
+            contour = contours[best_id]
+            contour_cv2 = contour[:, [1, 0]]  # [row, col] → [col, row]
+            # 将全图坐标转换为裁剪图像坐标
+            contour_cv2[:, 0] -= self.cmin  # col - cmin
+            contour_cv2[:, 1] -= self.rmin  # row - rmin
+            cv2.drawContours(obs_map_vis, [contour_cv2], 0, (0, 255, 0), 3)  # 绿色轮廓
+
+            # 绘制选中物体的中心点（红点）
+            selected_center = centers[best_id]
+            center_col = int(selected_center[1]) - self.cmin  # col - cmin
+            center_row = int(selected_center[0]) - self.rmin  # row - rmin
+            cv2.circle(
+                obs_map_vis,
+                (center_col, center_row),
+                radius=5,
+                color=(0, 0, 255),
+                thickness=-1
+            )
+
+            # 保存图像以供调试
+            # cv2.imwrite("debug_output.png", obs_map_vis)
+            print(f"######nav object name : {name} #######")
+            # 显示最终图像
+            cv2.imshow("Selected Contour and Center", obs_map_vis)
+            cv2.waitKey()
+
+        return self.nearest_point_on_polygon(curr_pos, contours[best_id]), avg_heights[best_id]

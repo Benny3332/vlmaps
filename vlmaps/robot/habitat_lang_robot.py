@@ -10,7 +10,7 @@ import hydra
 import habitat_sim
 import cv2
 import open3d as o3d
-
+import json
 from vlmaps.robot.lang_robot import LangRobot
 from vlmaps.dataloader.habitat_dataloader import VLMapsDataloaderHabitat
 from vlmaps.navigator.navigator import Navigator
@@ -63,6 +63,25 @@ class HabitatLanguageRobot(LangRobot):
 
         self.nav = Navigator()
         self.controller = DiscreteNavController(self.config["params"]["controller_config"])
+        self.stairs_paths = []
+
+    def load_stairs(self):
+        """
+        Load stairs.json for the current scene from vlmaps_data_dir.
+        """
+        if not hasattr(self, 'scene_id') or not hasattr(self, 'vlmaps_data_save_dirs'):
+            print("Scene not initialized, cannot load stairs.json")
+            self.stairs_paths = []
+            return
+        vlmaps_data_dir = self.vlmaps_data_save_dirs[self.scene_id]
+        stairs_file = vlmaps_data_dir / "stairs.json"
+        if stairs_file.exists():
+            with open(stairs_file, "r") as f:
+                self.stairs_paths = json.load(f)
+            print(f"Loaded stairs.json from {stairs_file}")
+        else:
+            print(f"stairs.json not found at {stairs_file}, using empty stairs list")
+            self.stairs_paths = []
 
     def setup_scene(self, scene_id: int):
         """
@@ -499,6 +518,193 @@ class HabitatLanguageRobot(LangRobot):
         self.recorded_actions_list.extend(actual_actions_list)
 
         return actual_actions_list
+    
+    def move_to_3d(self, pos: Tuple[float, float], avg_height: float) -> List[str]:
+        """
+        Move the robot to the position on the full map, handling cross-floor navigation for up to three floors.
+        Uses stairs.json to navigate between floors, with straight-line paths on the source floor and plan_to_v2 for
+        intermediate and target floors.
+
+        Args:
+            pos (Tuple[float, float]): (row, col) on full map
+            avg_height (float): Average height of the target object in Habitat coordinates
+
+        Returns:
+            List[str]: List of actions for the entire multi-floor navigation
+        """
+        actual_actions_list = []
+        self._set_nav_curr_pose()
+        curr_pose_on_full_map = self.get_agent_pose_on_map()  # (row, col, angle_deg)
+        current_3d_pos = self.vlmaps_dataloader.full_map_3d_pose  # (x, y, z) in Habitat coordinates
+
+        # Get stairs paths for the current scene
+        stairs = self.stairs_paths
+        if not stairs:
+            print("No stairs data available, falling back to single-floor navigation")
+            return self.move_to_v2(pos)
+
+        # Convert stairs positions to map coordinates (row, col)
+        stairs_map_coords = []
+        for path in stairs:
+            path_coords = []
+            for pose in path:
+                tf = cvt_pose_vec2tf(np.array(pose["position"] + pose["rotation"]))  # Convert to 4x4 transform
+                row, col, height, _ = self.vlmaps_dataloader.conver_tf_from_habitat_tf(tf)
+                path_coords.append({"row": row, "col": col, "height": height})  # Store y as height
+            stairs_map_coords.append(path_coords)
+
+        height_tolerance = 20  # Tolerance for considering heights equal (in meters)
+        floor_heights = []
+        for path in stairs_map_coords:
+            start_height = path[0]["height"]
+            end_height = path[-1]["height"]
+            floor_heights.extend([start_height, end_height])
+        
+        # Remove near-duplicate heights within tolerance
+        unique_heights = []
+        for h in sorted(floor_heights):
+            if not unique_heights or all(abs(h - uh) > height_tolerance for uh in unique_heights):
+                unique_heights.append(h)
+        unique_heights.sort()  # Sort heights to assign floor indices (lowest = floor 0)
+
+        # Map stair paths to the floors they connect
+        stair_floor_mappings = []
+        for idx, path in enumerate(stairs_map_coords):
+            start_height = path[0]["height"]
+            end_height = path[-1]["height"]
+            # Find the closest unique height for start and end
+            start_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - start_height))
+            end_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - end_height))
+            stair_floor_mappings.append({
+                "path_idx": idx,
+                "start_floor": start_floor,
+                "end_floor": end_floor,
+                "is_ascending": end_height > start_height
+            })
+
+        # Determine source and target floors
+        src_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - current_3d_pos[2]))
+        tgt_floor = min(range(len(unique_heights)), key=lambda i: abs(unique_heights[i] - avg_height))
+
+        if src_floor == tgt_floor:
+            print(f"Source and target on same floor ({src_floor}), using direct navigation")
+            return self.move_to_v2(pos)
+
+        # Determine navigation direction (up or down)
+        ascending = tgt_floor > src_floor
+        floor_diff = abs(tgt_floor - src_floor)
+        if floor_diff > 2:
+            print("Navigation across more than two floors not supported")
+            return self.move_to_v2(pos)  # Fallback to single-floor navigation
+
+        # Find nearest stair start/end points
+        def find_nearest_stair_points(floor_from, floor_to, src_pos, tgt_pos):
+            min_dist = float('inf')
+            best_start = None
+            best_end = None
+            best_path_idx = None
+            for mapping in stair_floor_mappings:
+                # Check if the stair connects the desired floors (in either direction)
+                connects_floors = (
+                    (mapping["start_floor"] == floor_from and mapping["end_floor"] == floor_to) or
+                    (mapping["start_floor"] == floor_to and mapping["end_floor"] == floor_from)
+                )
+                if connects_floors:
+                    path = stairs_map_coords[mapping["path_idx"]]
+                    # Determine start and end based on navigation direction
+                    if (mapping["start_floor"] == floor_from and mapping["end_floor"] == floor_to):
+                        path_start = path[0]
+                        path_end = path[-1]
+                    else:  # Reverse the path direction
+                        path_start = path[-1]
+                        path_end = path[0]
+                    start_dist = np.hypot(src_pos[0] - path_start["row"], src_pos[1] - path_start["col"])
+                    end_dist = np.hypot(tgt_pos[0] - path_end["row"], tgt_pos[1] - path_end["col"])
+                    total_dist = start_dist + end_dist
+                    if total_dist < min_dist:
+                        min_dist = total_dist
+                        best_start = path_start
+                        best_end = path_end
+                        best_path_idx = mapping["path_idx"]
+            return best_start, best_end, best_path_idx
+
+        # Plan paths for each segment
+        paths = []
+        if floor_diff == 1:  # Direct navigation from src_floor to tgt_floor
+            stair_start, stair_end, path_idx = find_nearest_stair_points(src_floor, tgt_floor, curr_pose_on_full_map[:2], pos)
+            if stair_start is None or stair_end is None:
+                print("No suitable stair path found, falling back to single-floor navigation")
+                return self.move_to_v2(pos)
+
+            # Source floor: straight-line path to stair start
+            src_to_stair = [curr_pose_on_full_map[:2], (stair_start["row"], stair_start["col"])]
+            paths.append(src_to_stair)
+
+            # Stair path (reverse if descending and the path was recorded ascending, or vice versa)
+            stair_path = [(p["row"], p["col"]) for p in stairs_map_coords[path_idx]]
+            is_path_ascending = stair_floor_mappings[path_idx]["is_ascending"]
+            if (ascending and not is_path_ascending) or (not ascending and is_path_ascending):
+                stair_path = stair_path[::-1]
+            paths.append(stair_path)
+
+            # Target floor: plan from stair end to target
+            tgt_path = self.nav.plan_to_v2((stair_end["row"], stair_end["col"]), pos, vis=self.config["nav"]["plann_vis"])
+            paths.append(tgt_path[1:])  # Skip the start point as it's already in stair_path
+
+        else:  # floor_diff == 2 (e.g., floor 0 to 2 or 2 to 0)
+            # First leg: floor 0 to 1 or 2 to 1
+            mid_floor = 1
+            stair1_start, stair1_end, path1_idx = find_nearest_stair_points(src_floor, mid_floor, curr_pose_on_full_map[:2], (0, 0))  # Midpoint irrelevant
+            if stair1_start is None or stair1_end is None:
+                print("No suitable stair path found for first leg, falling back to single-floor navigation")
+                return self.move_to_v2(pos)
+
+            # Source floor: straight-line path to stair start
+            src_to_stair1 = [curr_pose_on_full_map[:2], (stair1_start["row"], stair1_start["col"])]
+            paths.append(src_to_stair1)
+
+            # First stair path
+            stair1_path = [(p["row"], p["col"]) for p in stairs_map_coords[path1_idx]]
+            is_path1_ascending = stair_floor_mappings[path1_idx]["is_ascending"]
+            if (ascending and not is_path1_ascending) or (not ascending and is_path1_ascending):
+                stair1_path = stair1_path[::-1]
+            paths.append(stair1_path)
+
+            # Middle floor: plan from stair1 end to stair2 start
+            stair2_start, stair2_end, path2_idx = find_nearest_stair_points(mid_floor, tgt_floor, (stair1_end["row"], stair1_end["col"]), pos)
+            if stair2_start is None or stair2_end is None:
+                print("No suitable stair path found for second leg, falling back to single-floor navigation")
+                return self.move_to_v2(pos)
+            mid_path = self.nav.plan_to_v2((stair1_end["row"], stair1_end["col"]), (stair2_start["row"], stair2_start["col"]), vis=self.config["nav"]["plann_vis"])
+            paths.append(mid_path[1:])
+
+            # Second stair path
+            stair2_path = [(p["row"], p["col"]) for p in stairs_map_coords[path2_idx]]
+            is_path2_ascending = stair_floor_mappings[path2_idx]["is_ascending"]
+            if (ascending and not is_path2_ascending) or (not ascending and is_path2_ascending):
+                stair2_path = stair2_path[::-1]
+            paths.append(stair2_path)
+
+            # Target floor: plan from stair2 end to target
+            # tgt_path = self.nav.plan_to_v2((stair2_end["row"], stair2_end["col"]), pos, vis=self.config["nav"]["plann_vis"])
+            # paths.append(tgt_path[1:])
+
+        # Combine paths and generate actions
+        combined_paths = []
+        for path in paths:
+            if path:  # Skip empty paths
+                combined_paths.extend(path[1:] if combined_paths else path)  # Include first point only for the first path
+
+        actions_list, poses_list = self.controller.convert_paths_to_actions(curr_pose_on_full_map, combined_paths)
+        success, real_actions_list = self.execute_actions(actions_list, poses_list, vis=self.config["nav"]["plann_vis"])
+        actual_actions_list.extend(real_actions_list)
+        actual_actions_list.append("stop")
+
+        if not hasattr(self, "recorded_actions_list"):
+            self.recorded_actions_list = []
+        self.recorded_actions_list.extend(actual_actions_list)
+
+        return actual_actions_list
 
     def turn(self, angle_deg: float):
         """
@@ -541,7 +747,7 @@ class HabitatLanguageRobot(LangRobot):
 
             real_actions_list.append(action)
             if vis:
-                self.display_obs(waitkey=False)
+                self.display_obs(waitkey=True)
                 self.display_curr_pos_on_map(map)
             if poses_list is None:
                 continue

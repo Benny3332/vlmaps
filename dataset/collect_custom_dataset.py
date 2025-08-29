@@ -6,6 +6,8 @@ from omegaconf import DictConfig
 import habitat_sim
 from vlmaps.utils.habitat_utils import *
 import cv2
+import json
+
 d3_40_colors_rgb = np.array([
     [31, 119, 180], [174, 199, 232], [255, 127, 14], [255, 187, 120],
     [44, 160, 44], [152, 223, 138], [214, 39, 40], [255, 152, 150],
@@ -34,6 +36,12 @@ def keyboard_control_fast():
         action = "look_up"
     elif k == ord("k"):
         action = "look_down"
+    elif k == ord("r"):
+        action = "start_stair"
+    elif k == ord("n"):
+        action = "next_point"
+    elif k == ord("e"):
+        action = "end_stair"
     elif k == ord("q"):  # 退出程序
         action = "stop"
     return k, action
@@ -146,6 +154,8 @@ def main(config: DictConfig) -> None:
         obs = sim.get_sensor_observations(0)
         last_action = None
         release_count = 0
+        stairs_paths = []
+        recording = False
         while True:
             show_rgb(obs)
             send_semantic(obs)
@@ -158,6 +168,34 @@ def main(config: DictConfig) -> None:
                 if action == "record":
                     init_agent_state = sim.get_agent(0).get_state()
                     actions_list = []
+                    continue
+                if action == "start_stair":
+                    if recording:
+                        print("Already recording, ignoring new start.")
+                    else:
+                        current_path = []
+                        state = agent.get_state()
+                        pose = get_pose(state)
+                        current_path.append(pose)
+                        recording = True
+                        print("Started recording stair path.")
+                    continue
+                elif action == "next_point":
+                    if recording:
+                        state = agent.get_state()
+                        pose = get_pose(state)
+                        current_path.append(pose)
+                        print("Added next point to stair path.")
+                    continue
+                elif action == "end_stair":
+                    if recording:
+                        state = agent.get_state()
+                        pose = get_pose(state)
+                        current_path.append(pose)
+                        stairs_paths.append(current_path)
+                        recording = False
+                        current_path = None
+                        print("Ended recording stair path.")
                     continue
                 last_action = action
                 release_count = 0
@@ -198,6 +236,17 @@ def main(config: DictConfig) -> None:
             agent_states.append(agent.get_state())
         save_states(root_save_dir, agent_states)
         save_color_sensor_states(root_save_dir, agent_states)
+        stairs_save_path = scene_dir / "stairs.json"
+        with open(stairs_save_path, "w") as f:
+            json.dump(stairs_paths, f)
+        print(f"Saved stairs paths to {stairs_save_path}")
+
+def get_pose(state):
+    # Convert NumPy arrays and float32 to Python lists and floats
+    return {
+        "position": [float(x) for x in state.position],  # Convert numpy.float32 to float
+        "rotation": [float(state.rotation.x), float(state.rotation.y), float(state.rotation.z), float(state.rotation.w)]
+    }
 
 def get_camera_intrinsics(sim, sensor_name):
     # 获取渲染相机

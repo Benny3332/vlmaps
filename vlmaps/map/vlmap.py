@@ -578,3 +578,155 @@ class VLMap(Map):
             cv2.waitKey() 
 
         return contours, centers, bbox_list, color_distributions
+
+    def get_pos_color_and_height(self, name: str, vis: bool = False) -> Tuple[List[List[int]], List[List[float]], List[np.ndarray], List[Dict]]:
+        """
+        Get the contours, centers, bbox list and color distributions of a certain category
+        on a full map
+        """
+        assert self.categories
+        # 获取目标类别的3D点云掩码
+        pc_mask = self.index_map(name, with_init_cat=True)
+        # pc_mask_index = np.where(pc_mask)[0]
+        mask_2d = pool_filter_by_height_3d_label_to_2d(pc_mask, self.grid_pos, self.gs, self.cs, self.min_height, 10.0)
+        mask_2d = mask_2d[self.rmin : self.rmax + 1, self.cmin : self.cmax + 1]
+        # mask_2d_index = np.stack(np.where(mask_2d), axis=1)
+        if vis:
+            cv2.imshow(f"mask_{name}", (mask_2d.astype(np.float32) * 255).astype(np.uint8))
+            cv2.waitKey()
+        # 创建彩色mask图像（裁剪区域大小）
+        color_mask = np.zeros((mask_2d.shape[1], mask_2d.shape[0], 3), dtype=np.uint8)
+        
+        foreground = binary_closing(mask_2d, iterations=3)
+        foreground = gaussian_filter(foreground.astype(float), sigma=0.8, truncate=3)
+        foreground = foreground > 0.5
+        foreground = binary_dilation(foreground)
+        # foreground_index = np.stack(np.where(foreground), axis=1)
+        contours, centers, bbox_list, _ = get_segment_islands_pos(foreground, 1)
+
+        contours_reverse = [None] * len(contours)
+        for i in range(len(contours)):
+            contours_reverse[i] = contours[i][:, [1, 0]]  # 从 (row,col) 转为 (col,row)
+        
+        # 存储每个物体的颜色分布信息
+        color_distributions = []
+        avg_heights = []
+        # 为每个轮廓创建点云索引列表
+        contour_indices = [[] for _ in range(len(contours))]
+        r_c = []
+        local_r_c = []
+        # 遍历所有属于目标类别的体素
+        for idx in np.where(pc_mask)[0]:
+            # 获取体素的全局坐标
+            r, c, h = self.grid_pos[idx]
+            r_c.append([r,c])
+            # 转换为裁剪区域坐标
+            local_r = r - self.rmin
+            local_c = c - self.cmin
+            local_r_c.append([local_r,local_c])
+            # 检查是否在裁剪区域内
+            if 0 <= local_r < foreground.shape[0] and 0 <= local_c < foreground.shape[1]:
+                # 检查点是否在某个轮廓内
+                point = (local_c, local_r)  # OpenCV格式 (x,y)
+                
+                for contour_idx, contour in enumerate(contours_reverse):
+                    # 检查点是否在当前轮廓内
+                    if cv2.pointPolygonTest(contour, point, False) >= 0:
+                        contour_indices[contour_idx].append(idx)
+                        break
+        
+        # 处理每个轮廓的点云
+        for i, indices in enumerate(contour_indices):
+            # 获取当前轮廓的点云索引
+            obj_indices = indices
+            
+            # 计算颜色分布
+            color_dist = {}
+            if obj_indices:
+
+                # mask = np.zeros(len(self.grid_pos), dtype=bool)
+                # mask[obj_indices] = True
+                # from vlmaps.utils.visualize_utils import visualize_masked_map_3d
+                # visualize_masked_map_3d(self.grid_pos, mask, self.grid_rgb)
+
+                obj_colors = self.grid_rgb[obj_indices]
+                obj_height_avg = int(np.mean(self.grid_pos[obj_indices, 2]).round())
+                n_points = len(obj_colors)
+                
+                # 根据点数选择合适的聚类方法
+                if n_points < 3:
+                    # 点数太少，直接使用平均颜色
+                    avg_color = np.mean(obj_colors, axis=0).astype(int).tolist()
+                    color_dist = {"main_colors": [{"color": avg_color, "proportion": 1.0}]}
+                    main_color = tuple(int(c) for c in avg_color)
+                else:
+                    # 使用K-means聚类识别主要颜色
+                    from sklearn.cluster import KMeans
+                    try:
+                        n_clusters = min(2, n_points)
+                        kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(obj_colors)
+                        cluster_centers = kmeans.cluster_centers_.astype(int)
+                        cluster_labels, counts = np.unique(kmeans.labels_, return_counts=True)
+                        total = len(obj_colors)
+                        
+                        # 按占比排序颜色
+                        sorted_indices = np.argsort(counts)[::-1]
+                        main_colors = []
+                        
+                        for idx in sorted_indices:
+                            color = cluster_centers[idx].tolist()
+                            proportion = counts[idx] / total
+                            main_colors.append({"color": color, "proportion": proportion})
+                        
+                        color_dist = {"main_colors": main_colors}
+                        main_color = tuple(int(c) for c in main_colors[0]["color"])
+                    except Exception as e:
+                        print(f"KMeans聚类失败: {e}")
+                        avg_color = np.mean(obj_colors, axis=0).astype(int).tolist()
+                        color_dist = {"main_colors": [{"color": avg_color, "proportion": 1.0}]}
+                        main_color = tuple(int(c) for c in avg_color)
+            else:
+                # 没有颜色数据，使用黑色
+                color_dist = {"main_colors": [{"color": [0, 0, 0], "proportion": 1.0}]}
+                main_color = (0, 0, 0)
+            
+            color_distributions.append(color_dist)
+            avg_heights.append(obj_height_avg)
+            # 使用主色填充物体区域（裁剪区域内坐标）
+            bgr_color = (main_color[2], main_color[1], main_color[0])
+            cv2.drawContours(color_mask, [contours[i].astype(np.int32)], -1, bgr_color, thickness=cv2.FILLED)
+            
+            # 转换坐标到全局地图（与原始代码保持一致）
+            centers[i][0] += self.rmin
+            centers[i][1] += self.cmin
+            bbox_list[i][0] += self.rmin
+            bbox_list[i][1] += self.rmin
+            bbox_list[i][2] += self.cmin
+            bbox_list[i][3] += self.cmin
+            for j in range(len(contours[i])):
+                contours[i][j, 0] += self.rmin
+                contours[i][j, 1] += self.cmin
+
+        # 可视化彩色mask（裁剪区域内）
+        if vis:
+            # 创建用于可视化的轮廓（转换回(row,col)格式以匹配mask_2d坐标系）
+            visualization_contours = []
+            for contour in contours:
+                # 将轮廓从OpenCV格式(col,row)转回图像数组格式(row,col)
+                vis_contour = contour[:, [1, 0]].copy()  # 交换回(row,col)
+                visualization_contours.append(vis_contour.astype(np.int32))
+            
+            # 添加轮廓边界（白色）
+            contour_mask = np.zeros_like(color_mask)
+            for contour in visualization_contours:
+                cv2.drawContours(contour_mask, [contour], -1, (255, 255, 255), 1)
+            
+            # 叠加轮廓到彩色mask
+            combined_mask = cv2.addWeighted(color_mask, 0.8, contour_mask, 0.2, 0)
+            combined_mask_display = combined_mask.transpose(1, 0, 2)
+            # 显示彩色mask
+            logging.debug(f"color_mask_name: {name}")
+            cv2.imshow(f"color_mask_{name}", combined_mask_display)
+            cv2.waitKey() 
+
+        return contours, centers, bbox_list, color_distributions, avg_heights

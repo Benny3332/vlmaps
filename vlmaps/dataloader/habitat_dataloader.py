@@ -100,7 +100,7 @@ class VLMapsDataloaderHabitat:
 
         # 初始化完整地图姿态（默认为None）
         self.full_map_pose = None  # (row, col, theta_deg)
-
+        self.full_map_3d_pose = None
         # TODO: implement loading GT map option
 
     def get_obstacles_cropped(self) -> np.array:
@@ -158,7 +158,19 @@ class VLMapsDataloaderHabitat:
         theta_deg = np.rad2deg(theta)
         x, y, z = tf[:3, 3]
         row, col, height = base_pos2grid_id_3d(self.gs, self.cs, x, y, z)
+        self.full_map_3d_pose = [row, col, height, theta_deg]
         self.full_map_pose = [row, col, theta_deg]
+
+    def conver_tf_from_habitat_tf(self, tf_hab: np.ndarray):
+        """
+        从Habitat变换矩阵转换到完整地图姿态
+        """
+        tf = self.inv_init_base_tf @ self.base_transform @ tf_hab @ np.linalg.inv(self.base_transform)
+        theta = base_rot_mat2theta(tf[:3, :3])
+        theta_deg = np.rad2deg(theta)
+        x, y, z = tf[:3, 3]
+        row, col, height = base_pos2grid_id_3d(self.gs, self.cs, x, y, z)
+        return row, col, height, theta_deg
 
     def from_camera_tf(self, tf_cam: np.ndarray):
         """

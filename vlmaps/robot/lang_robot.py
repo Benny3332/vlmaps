@@ -77,6 +77,15 @@ class LangRobot:
         """
         # check if the pos is None
         return NotImplementedError
+    
+    def move_to_3d(self, pos: Tuple[float, float], obj_height_avg: int):
+        """
+        Move the robot to the position on the map
+        based on accurate localization in the environment
+        """
+        # check if the pos is None
+        return NotImplementedError
+    
     def turn(self, angle_deg: float):
         return NotImplementedError
         # actions_list = self.nav.turn(angle_deg)
@@ -192,6 +201,13 @@ class LangRobot:
         # color_list = [[56,98,173]]
         pos = self.map.get_nearest_and_similarity_color_pos(self.curr_pos_on_map, name, color_list, 0.95, vis)
         self.move_to_v2(pos)
+
+
+    def move_to_color_3d_object(self, name: str, color_list: List[List[int]], true_color_value: List[List[int]], vis: bool = False):
+        self._set_nav_curr_pose()
+        # color_list = [[56,98,173]]
+        pos, obj_height_avg = self.map.get_3d_nearest_and_similarity_color_pos(self.curr_pos_on_map, name, color_list, 0.95, vis)
+        self.move_to_3d(pos, obj_height_avg)
 
     def move_forward(self, meters: float):
         self._set_nav_curr_pose()
